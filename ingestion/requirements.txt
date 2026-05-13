@@ -1,0 +1,4 @@
+﻿google-cloud-storage==2.14.0
+pandas==2.2.0
+pyarrow==15.0.0
+requests==2.31.0

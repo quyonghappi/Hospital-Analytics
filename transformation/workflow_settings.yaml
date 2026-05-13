@@ -1,0 +1,15 @@
+dataformCoreVersion: 3.0.56
+defaultProject: hospital-platform-placeholder
+defaultLocation: asia-southeast1
+
+defaultDataset: hospital_dwh
+defaultAssertionDataset: hospital_assertions
+
+vars:
+  # Base name của Staging dataset chứa các external tables trỏ ra GCS Silver
+  staging_dataset: hospital_staging
+
+  env: dev
+
+  # Phục vụ cho Incremental Loading của Fact table
+  execution_date: "1970-01-01"

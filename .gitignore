@@ -7,26 +7,24 @@
 # Bỏ qua local cache và provider binaries
 **/.terraform/*
 .terraform/
-
-# Bỏ qua state files (Dù đã dùng GCS Backend nhưng vẫn phải ignore để phòng hờ local state)
 *.tfstate
 *.tfstate.*
+
+*.tfstate.backup
+.terraform.lock.hcl  # Chỉ giữ nếu team cần lock version provider
 
 # Bỏ qua crash logs
 crash.log
 crash.*.log
 
-# Bỏ qua file chứa secret variables
 *.tfvars
 *.tfvars.json
 
-# Bỏ qua overrides (local test)
 override.tf
 override.tf.json
 *_override.tf
 *_override.tf.json
 
-# ĐƯỢC PHÉP push tfvars mẫu
 !*.example.tfvars
 !terraform.tfvars.example
 
@@ -50,9 +48,37 @@ __pycache__/
 .dataform/credentials.json
 *.json
 !*.schema.json # Vẫn cho phép push file định nghĩa schema nếu có
+.gcp/
+orchestration/.astro/config.yaml
 
 # Environment variables
 .env
 .env.local
 
 
+# Local Dev
+docker-compose.override.yml
+
+# ==========================================
+# GCP & DATA SPECIFIC
+# ==========================================
+bin/
+gen/
+*.db
+*.log
+
+# Dataform artifacts
+.dataform/
+packages/
+node_modules/
+
+# Airflow/Astro local artifacts
+.astro/
+airflow.db
+airflow.cfg
+logs/
+unittests.log
+
+# Vertex AI / Notebooks
+.ipynb_checkpoints
+.pytest_cache/
