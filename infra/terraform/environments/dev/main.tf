@@ -22,4 +22,5 @@ module "data_warehouse" {
   force_destroy     = true
   # dataform_sa_email = module.security.dataform_sa_email
   common_labels   = var.common_labels
+  silver_bucket_name = module.storage.silver_bucket_name
 }
