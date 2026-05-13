@@ -8,15 +8,19 @@ resource "google_storage_bucket" "data_lake" {
   name          = "${var.project_id}-${each.key}-${var.env}"
   location      = var.region
   force_destroy = var.force_destroy # Quyết định bởi environment
+  labels        = var.common_labels
+  uniform_bucket_level_access = true
 
-  lifecycle {
-    prevent_destroy = var.prevent_destroy
+  dynamic "lifecycle_rule" {
+    for_each = each.key == "bronze-raw" ? [1] : []
+    content {
+      condition {
+        age = 30
+      }
+      action {
+        type          = "SetStorageClass"
+        storage_class = "COLDLINE"
+      }
+    }
   }
-}
-
-# Gán quyền đọc/ghi Bronze cho Spark SA
-resource "google_storage_bucket_iam_member" "spark_bronze_admin" {
-  bucket = google_storage_bucket.data_lake["bronze-raw"].name
-  role   = "roles/storage.objectAdmin" # Spark cần ghi/sửa, ObjectViewer là không đủ nếu có job đẩy data
-  member = "serviceAccount:${var.spark_sa_email}"
 }
