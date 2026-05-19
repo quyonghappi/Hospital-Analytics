@@ -1,0 +1,27 @@
+config {
+  type: "table",
+  name: "dim_hospital",
+  description: "Bảng lưu trữ thông tin cố định về hạ tầng và định danh bệnh viện",
+  clusterBy: ["county_fips", "state"],
+  tags: ["daily_run", "dimension"],
+  assertions: {
+    uniqueKey: ["hospital_id"],
+    nonNull: ["hospital_id", "hospital_name"]
+  }
+}
+
+SELECT
+  CAST(hospital_id AS STRING) AS hospital_id,
+  CAST(hospital_name AS STRING) AS hospital_name,
+  CAST(hospital_type AS STRING) AS hospital_type,
+  CAST(ownership_type AS STRING) AS ownership_type,
+  CAST(rural_urban_flag AS STRING) AS rural_urban_flag,
+  CAST(COALESCE(staffed_beds_capacity, 0) AS INT64) AS staffed_beds_capacity,
+  CAST(COALESCE(icu_beds_capacity, 0) AS INT64) AS icu_beds_capacity,
+  CAST(total_fte_staff AS FLOAT64) AS total_fte_staff,
+  CAST(state AS STRING) AS state,
+  LPAD(CAST(county_fips AS STRING), 5, '0') AS county_fips,
+  CAST(latitude AS FLOAT64) AS latitude,
+  CAST(longitude AS FLOAT64) AS longitude
+FROM
+  ${ref("ext_dim_hospital")}

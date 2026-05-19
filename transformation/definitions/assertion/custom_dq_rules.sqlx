@@ -1,0 +1,18 @@
+config {
+  type: "assertion",
+  name: "assert_valid_hospital_utilization",
+  tags: ["daily_run", "data_quality"]
+}
+
+SELECT
+  fact_id,
+  occupancy_rate,
+  staffed_beds,
+  beds_in_use
+FROM
+  ${ref("stg_fact_hospital_utilization")}
+WHERE
+  occupancy_rate > 1.5 -- Tránh dữ liệu lỗi tỷ lệ lấp đầy vô lý
+  OR staffed_beds < 0
+  OR beds_in_use < 0
+  OR (beds_in_use > staffed_beds AND occupancy_rate <= 1.0)

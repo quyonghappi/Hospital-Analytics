@@ -1,0 +1,49 @@
+config {
+  type: "view",
+  schema: "hospital_staging",
+  name: "stg_dim_population",
+  description: "Staging cho Dimension Dân số. Deduplicate theo hạt và năm thống kê.",
+  tags: ["daily_run", "staging"],
+  assertions: {
+    uniqueKey: ["population_sk"],
+    nonNull: ["county_fips", "census_year"]
+  }
+}
+
+WITH raw_external AS (
+  SELECT
+    county_fips,
+    CAST(census_year AS INT64) AS census_year,
+    CAST(total_population AS INT64) AS total_population,
+    CAST(pop_65_plus_pct AS FLOAT64) AS pop_65_plus_pct,
+    CAST(population_density AS FLOAT64) AS population_density,
+    CAST(physicians_per_100k AS FLOAT64) AS physicians_per_100k,
+    CAST(nurses_per_100k AS FLOAT64) AS nurses_per_100k,
+    _FILE_NAME AS source_file_path
+  FROM
+    ${ref("ext_dim_population")}
+),
+
+deduplicated AS (
+  SELECT *
+  FROM raw_external
+  -- phải deduplicate theo fips & year
+  QUALIFY ROW_NUMBER() OVER(
+    PARTITION BY county_fips, census_year 
+    ORDER BY source_file_path DESC 
+  ) = 1
+)
+
+SELECT
+  -- Composite Surrogate Key (Hạt + Năm)
+  FARM_FINGERPRINT(CONCAT(county_fips, '_', CAST(census_year AS STRING))) AS population_sk,
+  
+  TRIM(county_fips) AS county_fips,
+  census_year,
+  COALESCE(total_population, 0) AS total_population,
+  COALESCE(pop_65_plus_pct, 0.0) AS pop_65_plus_pct,
+  COALESCE(population_density, 0.0) AS population_density,
+  COALESCE(physicians_per_100k, 0.0) AS physicians_per_100k,
+  COALESCE(nurses_per_100k, 0.0) AS nurses_per_100k
+
+FROM deduplicated

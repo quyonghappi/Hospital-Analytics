@@ -1,0 +1,61 @@
+config {
+  type: "view", 
+  schema: "hospital_staging",
+  name: "stg_dim_hospital",
+  description: "Bảng Staging cho dim_hospital. Thực hiện deduplicate và cast type.",
+  tags: ["daily_run", "staging"],
+  assertions: {
+    uniqueKey: ["hospital_id"],
+    nonNull: ["hospital_id", "hospital_name", "state"]
+  }
+}
+
+WITH raw_external AS (
+  SELECT
+    hospital_id,
+    hospital_name,
+    hospital_type,
+    ownership_type,
+    rural_urban_flag,
+    CAST(staffed_beds_capacity AS INT64) AS staffed_beds_capacity,
+    CAST(icu_beds_capacity AS INT64) AS icu_beds_capacity,
+    CAST(total_fte_staff AS FLOAT64) AS total_fte_staff,
+    state,
+    county_fips,
+    latitude,
+    longitude,
+    -- Lấy _FILE_NAME pseudo-column của BQ để biết file nào mới nhất
+    _FILE_NAME AS source_file_path
+  FROM
+    ${ref("ext_dim_hospital")}
+),
+
+deduplicated AS (
+  SELECT
+    *
+  FROM
+    raw_external
+  -- Dùng window function để chỉ lấy bản ghi từ file Parquet được load lên GCS gần đây nhất
+  QUALIFY ROW_NUMBER() OVER(
+    PARTITION BY hospital_id 
+    ORDER BY source_file_path DESC 
+  ) = 1
+)
+
+SELECT
+  -- Generate Surrogate Key cho Dimension (Best practice cho Kimball model)
+  FARM_FINGERPRINT(hospital_id) AS hospital_sk,
+  hospital_id,
+  TRIM(hospital_name) AS hospital_name,
+  COALESCE(TRIM(hospital_type), 'Unknown') AS hospital_type,
+  ownership_type,
+  rural_urban_flag,
+  COALESCE(staffed_beds_capacity, 0) AS staffed_beds_capacity,
+  COALESCE(icu_beds_capacity, 0) AS icu_beds_capacity,
+  total_fte_staff,
+  state,
+  county_fips,
+  latitude,
+  longitude
+FROM
+  deduplicated

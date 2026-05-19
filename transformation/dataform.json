@@ -1,6 +1,0 @@
-{
-  "defaultSchema": "hospital_serving",
-  "assertionSchema": "data_assertions",
-  "defaultDatabase": "YOUR_GCP_PROJECT_ID",
-  "defaultLocation": "asia-southeast1"
-}

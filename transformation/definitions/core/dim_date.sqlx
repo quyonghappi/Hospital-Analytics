@@ -1,0 +1,32 @@
+config {
+  type: "table",
+  name: "dim_date",
+  description: "Phân tích dữ liệu theo các cấp độ thời gian",
+  clusterBy: ["year", "month"],
+  tags: ["setup", "dimension"],
+  assertions: {
+    uniqueKey: ["full_date"], 
+    nonNull: ["full_date"]
+  }
+}
+
+WITH dates AS (
+  SELECT date_array
+  FROM UNNEST(GENERATE_DATE_ARRAY('2020-01-01', '2030-12-31', INTERVAL 1 DAY)) AS date_array
+)
+
+SELECT
+  date_array AS full_date,
+  FORMAT_DATE('%A', date_array) AS day_of_week,
+  EXTRACT(ISOWEEK FROM date_array) AS week_number,
+  EXTRACT(MONTH FROM date_array) AS month,
+  EXTRACT(QUARTER FROM date_array) AS quarter,
+  EXTRACT(YEAR FROM date_array) AS year,
+  CASE 
+    WHEN EXTRACT(MONTH FROM date_array) IN (12, 1, 2) THEN 'Winter'
+    WHEN EXTRACT(MONTH FROM date_array) IN (3, 4, 5) THEN 'Spring'
+    WHEN EXTRACT(MONTH FROM date_array) IN (6, 7, 8) THEN 'Summer'
+    ELSE 'Fall' 
+  END AS season,
+  FALSE AS is_holiday
+FROM dates

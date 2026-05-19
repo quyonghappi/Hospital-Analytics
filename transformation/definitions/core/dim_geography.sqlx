@@ -1,0 +1,21 @@
+config {
+  type: "table",
+  name: "dim_geography",
+  description: "Lưu trữ thông tin địa lý cố định của khu vực",
+  clusterBy: ["state_code", "county_fips"],
+  tags: ["daily_run", "dimension"],
+  assertions: {
+    uniqueKey: ["county_fips"],
+    nonNull: ["county_fips", "county_name", "state_code"]
+  }
+}
+
+SELECT
+  CAST(county_fips AS STRING) AS county_fips,
+  CAST(county_name AS STRING) AS county_name,
+  CAST(state_code AS STRING) AS state_code,
+  CAST(state_name AS STRING) AS state_name,
+  CAST(hrr_region AS STRING) AS hrr_region,
+  CAST(area_km2 AS FLOAT64) AS area_km2
+FROM
+  ${ref("ext_dim_geography")}

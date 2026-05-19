@@ -1,0 +1,37 @@
+config {
+  type: "incremental",
+  name: "fact_hospital_utilization",
+  description: "Bảng Fact cốt lõi lưu trữ mức độ sử dụng tài nguyên bệnh viện",
+  uniqueKey: ["fact_id"], 
+  bigquery: {
+    partitionBy: "report_date",
+    clusterBy: ["hospital_id", "source_id"],
+    requirePartitionFilter: true, // CRITICAL: Chặn Looker Studio full table scan
+    
+    // Idempotent filter: Base on execution_date, NOT CURRENT_DATE()
+    updatePartitionFilter: `report_date >= DATE_SUB(DATE('${dataform.projectConfig.vars.execution_date}'), INTERVAL 14 DAY)`
+  },
+  tags: ["daily_run", "fact", "core"],
+  assertions: {
+    uniqueKey: ["fact_id"],
+    nonNull: ["fact_id", "hospital_id", "report_date"]
+  }
+}
+
+SELECT
+  fact_id, 
+  hospital_id,
+  report_date,
+  staffed_beds,
+  beds_in_use,
+  icu_beds_total,
+  icu_beds_in_use,
+  patient_admissions,
+  patient_discharges,
+  occupancy_rate,
+  staffing_shortage_flag,
+  source_id,
+  CURRENT_TIMESTAMP() AS dwh_updated_at, -- Đổi tên cho rõ nghĩa là thời điểm BQ merge
+  pipeline_version
+FROM
+  ${ref("stg_fact_hospital_utilization")}

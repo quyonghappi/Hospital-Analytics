@@ -1,0 +1,72 @@
+config {
+  type: "view",
+  schema: "hospital_dwh",
+  name: "fct_forecast_enriched",
+  description: "Bảng Enriched Forecast kết hợp dữ liệu AI và Context từ Dimensions phục vụ Looker Studio.",
+  tags: ["downstream_ml", "serving"] // Phân tách tag rõ ràng với "daily_run"
+}
+
+/* 
+  STEP 1: Deduplicate Vertex AI Outputs
+  Vertex AI thường append kết quả batch mới vào BQ. 
+  Cần lọc lấy forecast được sinh ra gần đây nhất (run_date mới nhất) cho một ngày mục tiêu (forecast_date).
+*/
+WITH latest_forecast AS (
+  SELECT 
+    *
+  FROM 
+    ${ref("ml_forecast_results")}
+  QUALIFY ROW_NUMBER() OVER(
+    PARTITION BY hospital_id, forecast_date 
+    ORDER BY run_date DESC
+  ) = 1
+)
+
+/* 
+  STEP 2: Enrich (Denormalize) data phục vụ BI Layer
+*/
+SELECT
+  -- 1. Keys & Thời gian
+  f.forecast_id,
+  f.hospital_id,
+  f.forecast_date,
+  f.run_date,
+  
+  -- 2. Context Bệnh viện (Tối ưu Looker filtering)
+  h.hospital_name,
+  h.hospital_type,
+  h.staffed_beds_capacity,
+  
+  -- 3. Context Địa lý (Tối ưu Looker Map & Heatmap)
+  g.county_name,
+  g.state_code,
+  g.hrr_region,
+  h.latitude,
+  h.longitude,
+  
+  -- 4. ML Predictions & Metrics
+  f.predicted_occupancy_rate,
+  f.predicted_patient_volume,
+  f.confidence_lower_95,
+  f.confidence_upper_95,
+  
+  -- 5. Explainable AI (SHAP)
+  f.shap_feature_1,
+  f.shap_feature_2,
+  f.shap_feature_3,
+  
+  -- 6. Alert Flag
+  -- Tạo Business Logic cảnh báo ngay trên View (Ví dụ: Nếu capacity > 90% -> TRUE)
+  CASE 
+    WHEN f.predicted_occupancy_rate >= 0.90 THEN TRUE 
+    ELSE FALSE 
+  END AS is_overload_warning,
+  
+  f.model_version
+
+FROM 
+  latest_forecast f
+LEFT JOIN 
+  ${ref("dim_hospital")} h ON f.hospital_id = h.hospital_id
+LEFT JOIN 
+  ${ref("dim_geography")} g ON h.county_fips = g.county_fips

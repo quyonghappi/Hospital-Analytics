@@ -1,0 +1,22 @@
+config {
+  type: "table",
+  name: "dim_population",
+  description: "Lưu trữ dữ liệu dân số và y tế thay đổi theo năm",
+  clusterBy: ["county_fips"],
+  tags: ["yearly_run", "dimension"],
+  assertions: {
+    uniqueKey: ["county_fips", "census_year"],
+    nonNull: ["county_fips", "census_year"]
+  }
+}
+
+SELECT
+  CAST(county_fips AS STRING) AS county_fips,
+  CAST(census_year AS INT64) AS census_year,
+  CAST(total_population AS INT64) AS total_population,
+  CAST(pop_65_plus_pct AS FLOAT64) AS pop_65_plus_pct,
+  CAST(population_density AS FLOAT64) AS population_density,
+  CAST(physicians_per_100k AS FLOAT64) AS physicians_per_100k,
+  CAST(nurses_per_100k AS FLOAT64) AS nurses_per_100k
+FROM
+  ${ref("ext_dim_population")}
