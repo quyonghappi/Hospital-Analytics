@@ -1,8 +1,9 @@
 config {
-  type: "table",
+  type: "incremental",
   name: "dim_geography",
-  description: "Lưu trữ thông tin địa lý cố định của khu vực",
+  description: "Lưu trữ thông tin địa lý cố định của khu vực (County-level)",
   clusterBy: ["state_code", "county_fips"],
+  uniqueKey: ["county_fips"], // Định nghĩa Khóa chính để Dataform tự động tạo mệnh đề MERGE
   tags: ["daily_run", "dimension"],
   assertions: {
     uniqueKey: ["county_fips"],
@@ -11,11 +12,18 @@ config {
 }
 
 SELECT
-  CAST(county_fips AS STRING) AS county_fips,
-  CAST(county_name AS STRING) AS county_name,
-  CAST(state_code AS STRING) AS state_code,
-  CAST(state_name AS STRING) AS state_name,
-  CAST(hrr_region AS STRING) AS hrr_region,
-  CAST(area_km2 AS FLOAT64) AS area_km2
+  county_fips,
+  county_name,
+  state_code,
+  state_name,
+  hrr_region,
+  area_km2,
+  CURRENT_TIMESTAMP() AS ingestion_timestamp,
+  TRUE AS is_active
 FROM
-  ${ref("ext_dim_geography")}
+  ${ref("stg_dim_geography")}
+
+${  when(incremental(), 
+    -- Mệnh đề này đảm bảo khi chạy incremental, Dataform chỉ quét dữ liệu stg của ngày hôm đó
+    `WHERE TRUE` 
+) }

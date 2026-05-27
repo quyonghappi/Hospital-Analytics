@@ -5,3 +5,4 @@ requests==2.31.0
 gcsfs==2024.2.0
 faker==24.4.0
 sodapy==2.2.0
+pyreadstat==1.2.5

@@ -111,13 +111,21 @@ resource "google_bigquery_table" "silver_external_tables" {
   dataset_id = google_bigquery_dataset.hospital_staging.dataset_id
   table_id   = each.key
 
+  # FIX: External/staging tables không cần protection
+  deletion_protection = false
+  
+   lifecycle {
+    # Tránh recreate khi chỉ thay đổi description hoặc label
+    ignore_changes = [description, labels]
+  }
+
+
   # Định nghĩa schema thông qua jsonencode
   schema = length(each.value.columns) > 0 ? jsonencode([
     for col in each.value.columns : {
       name        = col.name
       type        = col.type
       mode        = "NULLABLE"
-      description = col.description
     }
   ]) : null
 

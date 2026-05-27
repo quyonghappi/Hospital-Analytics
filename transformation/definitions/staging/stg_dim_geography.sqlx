@@ -2,46 +2,19 @@ config {
   type: "view",
   schema: "hospital_staging",
   name: "stg_dim_geography",
-  description: "Staging cho Dimension Địa lý. Deduplicate snapshot mới nhất từ GCS.",
-  tags: ["daily_run", "staging"],
-  assertions: {
-    uniqueKey: ["county_fips"],
-    nonNull: ["county_fips", "state_code", "county_name"]
-  }
+  description: "Staging cho Dimension Địa lý. Lọc lấy batch dữ liệu mới nhất từ GCS.",
+  tags: ["daily_run", "staging"]
 }
 
-WITH raw_external AS (
-  SELECT
-    county_fips,
-    county_name,
-    state_code,
-    state_name,
-    hrr_region,
-    CAST(area_km2 AS FLOAT64) AS area_km2,
-    -- Truy vết file vật lý để lấy snapshot mới nhất
-    _FILE_NAME AS source_file_path
-  FROM
-    ${ref("ext_dim_geography")}
-),
-
-deduplicated AS (
-  SELECT *
-  FROM raw_external
-  QUALIFY ROW_NUMBER() OVER(
-    PARTITION BY county_fips 
-    ORDER BY source_file_path DESC 
-  ) = 1
-)
-
 SELECT
-  FARM_FINGERPRINT(county_fips) AS geography_sk,
-  
-  -- Clean data
   TRIM(county_fips) AS county_fips,
   TRIM(county_name) AS county_name,
   TRIM(UPPER(state_code)) AS state_code,
   TRIM(state_name) AS state_name,
   COALESCE(TRIM(hrr_region), 'Unknown') AS hrr_region,
   COALESCE(area_km2, 0.0) AS area_km2
-
-FROM deduplicated
+FROM
+  ${ref("ext_dim_geography")}
+WHERE
+  -- dataform.projectConfig.vars.data_date được Airflow truyền vào dạng YYYY-MM-DD
+  exec_date = '${dataform.projectConfig.vars.data_date}'

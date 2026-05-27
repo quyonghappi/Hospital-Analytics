@@ -1,7 +1,8 @@
+-- transformation/definitions/core/dim_population.sqlx
 config {
   type: "table",
   name: "dim_population",
-  description: "Lưu trữ dữ liệu dân số và y tế thay đổi theo năm",
+  description: "Dữ liệu dân số và y tế theo hạt và năm",
   clusterBy: ["county_fips"],
   tags: ["yearly_run", "dimension"],
   assertions: {
@@ -11,12 +12,18 @@ config {
 }
 
 SELECT
-  CAST(county_fips AS STRING) AS county_fips,
-  CAST(census_year AS INT64) AS census_year,
-  CAST(total_population AS INT64) AS total_population,
-  CAST(pop_65_plus_pct AS FLOAT64) AS pop_65_plus_pct,
-  CAST(population_density AS FLOAT64) AS population_density,
-  CAST(physicians_per_100k AS FLOAT64) AS physicians_per_100k,
-  CAST(nurses_per_100k AS FLOAT64) AS nurses_per_100k
-FROM
-  ${ref("ext_dim_population")}
+  population_sk,
+  county_fips,
+  census_year,
+  total_population,
+  pop_65_plus_pct,
+  population_density,
+  median_household_income,
+  poverty_rate_pct,
+  uninsured_rate_pct,
+  physicians_per_100k,
+  nurses_per_100k,
+  rucc_code,
+  rucc_description,
+  metro_nonmetro_flag
+FROM ${ref("stg_dim_population")}

@@ -11,7 +11,7 @@ locals {
     # ---------------------------------------------------------
     "ext_dim_hospital" = {
       gcs_prefix               = "dim_hospital"
-      hive_partitioned         = false
+      hive_partitioned         = true
       require_partition_filter = false
       columns = [
         { name = "hospital_id", type = "STRING", description = "Mã chứng nhận bệnh viện (CMS Provider CCN)" },
@@ -30,8 +30,8 @@ locals {
     }
 
     "ext_dim_geography" = {
-      gcs_prefix               = "dim_geography"
-      hive_partitioned         = false
+      gcs_prefix               = "geography/dim_geography"
+      hive_partitioned         = true
       require_partition_filter = false
       columns = [
         { name = "county_fips", type = "STRING", description = "Mã định danh hạt (County FIPS code)" },
@@ -42,25 +42,31 @@ locals {
         { name = "area_km2", type = "FLOAT64", description = "Diện tích của hạt/quận" }
       ]
     }
-
+  
     "ext_dim_population" = {
-      gcs_prefix               = "dim_population"
-      hive_partitioned         = false
+      gcs_prefix               = "population/dim_population"   # trỏ tới silver: /dim_population/exec_date=*/
+      hive_partitioned         = true
       require_partition_filter = false
       columns = [
-        { name = "county_fips", type = "STRING", description = "Mã định danh hạt (County FIPS code)" },
-        { name = "census_year", type = "INT64", description = "Năm thống kê dân số" },
-        { name = "total_population", type = "INT64", description = "Tổng dân số trong khu vực" },
-        { name = "pop_65_plus_pct", type = "FLOAT64", description = "Tỷ lệ phần trăm dân số trên 65 tuổi" },
-        { name = "population_density", type = "FLOAT64", description = "Mật độ dân số" },
-        { name = "physicians_per_100k", type = "FLOAT64", description = "Số lượng bác sĩ/100K dân" },
-        { name = "nurses_per_100k", type = "FLOAT64", description = "Số lượng y tá/điều dưỡng/100K dân" }
+        { name = "county_fips",              type = "STRING",  description = "Mã FIPS hạt (5 digits)" },
+        { name = "census_year",              type = "INT64",   description = "Năm ACS census" },
+        { name = "total_population",         type = "INT64",   description = "Tổng dân số (ACS)" },
+        { name = "pop_65_plus_pct",          type = "FLOAT64", description = "% dân số >= 65 tuổi" },
+        { name = "population_density",       type = "FLOAT64", description = "Người/km2" },
+        { name = "median_household_income",  type = "INT64", description = "Thu nhập hộ gia đình trung vị (USD)" },
+        { name = "poverty_rate_pct",         type = "FLOAT64", description = "% dân số dưới ngưỡng nghèo" },
+        { name = "uninsured_rate_pct",       type = "FLOAT64", description = "% không có bảo hiểm y tế" },
+        { name = "physicians_per_100k",      type = "FLOAT64", description = "Bác sĩ/100k dân (AHRF)" },
+        { name = "nurses_per_100k",          type = "FLOAT64", description = "Y tá/100k dân (AHRF)" },
+        { name = "rucc_code",                type = "INT64",   description = "USDA Rural-Urban Continuum Code 1-9" },
+        { name = "rucc_description",         type = "STRING",  description = "Mô tả RUCC" },
+        { name = "ingestion_timestamp",      type = "TIMESTAMP" },
       ]
     }
 
     "ext_dim_date" = {
       gcs_prefix               = "dim_date"
-      hive_partitioned         = false
+      hive_partitioned         = true
       require_partition_filter = false
       columns = [
         { name = "full_date", type = "DATE", description = "Ngày đầy đủ" },
