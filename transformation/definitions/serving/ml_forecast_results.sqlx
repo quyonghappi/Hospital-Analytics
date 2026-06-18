@@ -1,0 +1,90 @@
+config {
+  type: "incremental",
+  schema: "serving_dev",
+  name: "ml_forecast_results",
+  description: "Bảng kết quả dự báo đã được làm sạch và enrich thông tin bệnh viện, phục vụ trực tiếp cho Looker Studio",
+  
+  bigquery: {
+    partitionBy: "forecast_date", // Phân vùng theo ngày dự báo để tối ưu truy vấn Looker Studio
+    clusterBy: ["state", "hospital_id"], 
+    requirePartitionFilter: true
+  },
+
+  columns: {
+    hospital_id: "Mã bệnh viện",
+    hospital_name: "Tên bệnh viện (Enriched từ dim_hospital)",
+    state: "Bang (Enriched từ dim_hospital)",
+    run_date: "Ngày chạy mô hình dự báo",
+    forecast_date: "Ngày mục tiêu được dự báo",
+    predicted_occupancy_rate: "Tỷ lệ lấp đầy dự báo",
+    confidence_lower_95: "Cận dưới khoảng tin cậy 95%",
+    confidence_upper_95: "Cận trên khoảng tin cậy 95%",
+    alert_flag: "Cờ cảnh báo (True nếu predicted_occupancy_rate > 90%)",
+    shap_feature_1: "Yếu tố ảnh hưởng top 1",
+    model_version: "Phiên bản mô hình AI"
+  }
+}
+
+WITH raw_predictions AS (
+  -- Bóc tách dữ liệu JSON từ Vertex AI output
+  SELECT 
+    CAST(hospital_id AS STRING) AS hospital_id,
+    SAFE_CAST(run_date AS DATE) AS run_date,
+    SAFE_CAST(forecast_date AS DATE) AS forecast_date,
+    
+    CAST(predicted_occupancy_rate AS FLOAT64) AS predicted_occupancy_rate,
+    CAST(confidence_lower_95 AS FLOAT64) AS confidence_lower_95,
+    CAST(confidence_upper_95 AS FLOAT64) AS confidence_upper_95,
+    
+    CAST(shap_feature_1 AS STRING) AS shap_feature_1,
+    CAST(shap_feature_2 AS STRING) AS shap_feature_2,
+    CAST(shap_feature_3 AS STRING) AS shap_feature_3,
+    CAST(shap_value_1 AS FLOAT64) AS shap_value_1,
+    CAST(shap_value_2 AS FLOAT64) AS shap_value_2,
+    CAST(shap_value_3 AS FLOAT64) AS shap_value_3,
+    
+    CAST(model_version AS STRING) AS model_version
+  FROM ${ref("vertex_batch_predictions_raw")}
+  
+  -- Logic Incremental
+  ${when(incremental(), `
+    WHERE SAFE_CAST(run_date AS DATE) > (
+      SELECT COALESCE(MAX(run_date), '1900-01-01') FROM ${self()}
+    )
+  `)}
+),
+
+enriched_predictions AS (
+  SELECT
+    p.hospital_id,
+    d.hospital_name,
+    d.state,
+    p.run_date,
+    p.forecast_date,
+    p.predicted_occupancy_rate,
+    p.confidence_lower_95,
+    p.confidence_upper_95,
+    
+    IF(p.predicted_occupancy_rate >= 0.90, true, false) AS alert_flag,
+    
+    p.shap_feature_1,
+    p.shap_feature_2,
+    p.shap_feature_3,
+    p.shap_value_1,
+    p.shap_value_2,
+    p.shap_value_3,
+    p.model_version
+  FROM raw_predictions p
+  LEFT JOIN ${ref("dim_hospital")} d 
+    ON p.hospital_id = d.hospital_id
+)
+
+-- Nếu mô hình retry sinh ra 2 dòng cho cùng 1 hospital_id vào cùng 1 forecast_date, luôn lấy bản cập nhật mới nhất
+SELECT * EXCEPT(row_num)
+FROM (
+  SELECT 
+    *,
+    ROW_NUMBER() OVER(PARTITION BY hospital_id, forecast_date ORDER BY run_date DESC) as row_num
+  FROM enriched_predictions
+)
+WHERE row_num = 1

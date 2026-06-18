@@ -1,10 +1,7 @@
-// Khai báo schema mapping để trỏ đúng vào Dataset mà Vertex AI Batch Prediction ghi dữ liệu
-const ml_schema = "hospital_ml_outputs_" + dataform.projectConfig.vars.env;
-
 declare({
   database: dataform.projectConfig.defaultDatabase,
-  schema: ml_schema,
-  name: "ml_forecast_results",
+  schema: "ml_predictions_dev",
+  name: "vertex_batch_predictions_raw",
   description:
-    "Bảng chứa kết quả dự báo thô được ghi trực tiếp bởi Vertex AI Batch Prediction.",
+    "Raw output từ Vertex AI Batch Prediction. Chứa nested structs của prediction value và array SHAP explanations. Dữ liệu chưa được parse và có duplicate giữa các lần chạy.",
 });

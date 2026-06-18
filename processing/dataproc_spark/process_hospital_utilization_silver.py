@@ -1,5 +1,3 @@
-# -*- coding: utf-8 -*-
-# etl_bronze_to_silver.py
 import sys
 from datetime import datetime
 from pyspark.sql import SparkSession
@@ -9,7 +7,6 @@ from pyspark.sql.functions import (
 )
 from pyspark.sql.types import IntegerType, FloatType, DateType, StringType
 
-# ==================== CẤU HÌNH BUCKET & PROJECT ====================
 BRONZE_BUCKET = "project-8e2366a6-d3cc-40ee-9de-bronze-raw-dev"
 SILVER_BUCKET = "project-8e2366a6-d3cc-40ee-9de-silver-curated-dev"
 QUARANTINE_BUCKET = "project-8e2366a6-d3cc-40ee-9de-quarantine-dev"
@@ -17,7 +14,6 @@ PROJECT_ID = "project-8e2366a6-d3cc-40ee-9de"
 BQ_DATASET = "hospital_dwh"
 BQ_TABLE = "pipeline_quality_log"
 
-# ==================== 1. ĐỌC DỮ LIỆU BRONZE ====================
 def read_cms_pos(spark, process_date):
     """Đọc tất cả file CMS POS dạng cms_pos_q*_*.parquet từ Bronze"""
     pattern = f"gs://{BRONZE_BUCKET}/cms/pos/cms_pos_*.parquet"
@@ -32,7 +28,6 @@ def read_hhs(spark, process_date):
     return df.withColumn("_source_file", lit("hhs")) \
              .withColumn("_ingested_at", current_timestamp())
 
-# ==================== 2. TRANSFORM CMS POS  ====================
 def transform_cms_pos(df):
     """
     CMS POS Bronze -> Silver
@@ -89,7 +84,6 @@ def transform_cms_pos(df):
     existing_cols = [c for c in keep_cols if c in df.columns]
     return df.select(*existing_cols)
 
-# ==================== 2b. TRANSFORM HHS (cập nhật theo schema thực tế) ====================
 def transform_hhs(df):
     """
     HHS Bronze -> Silver dựa trên schema thực tế.
@@ -166,7 +160,6 @@ def transform_hhs(df):
     existing_cols = [c for c in keep_cols if c in df.columns]
     return df.select(*existing_cols)
 
-# ==================== 3. BUSINESS RULES (Task 5) ====================
 def apply_business_rules(df, dataset_type):
     """
     Thêm cột _violations (array<string>) và _has_violation (boolean)
@@ -223,11 +216,10 @@ def apply_business_rules(df, dataset_type):
     df = df.withColumn("_has_violation", when(size(col("_violations")) > 0, True).otherwise(False))
     return df
 
-# ==================== 4. ROUTE SILVER / QUARANTINE (Task 6) ====================
 def write_silver_and_quarantine(df, source_name, process_date):
     """
-    Ghi clean records (không vi phạm) vào Silver bucket,
-    ghi bad records (có vi phạm) vào Quarantine bucket.
+    Ghi clean records vào Silver bucket,
+    ghi bad records vào Quarantine bucket.
     Trả về số lượng clean và bad.
     """
     clean_df = df.filter(~col("_has_violation"))
@@ -247,7 +239,6 @@ def write_silver_and_quarantine(df, source_name, process_date):
 
     return clean_df.count(), bad_df.count()
 
-# ==================== 5. GHI LOG CHẤT LƯỢNG VÀO BIGQUERY ====================
 def log_to_bigquery(spark, source_name, process_date, total_rows, clean_rows, bad_rows, quarantine_rate):
     """Append một dòng log vào bảng BigQuery"""
     from pyspark.sql.types import StructType, StructField, StringType, DateType, IntegerType, FloatType, TimestampType
@@ -273,7 +264,6 @@ def log_to_bigquery(spark, source_name, process_date, total_rows, clean_rows, ba
         .option("writeMethod", "direct") \
         .save()
 
-# ==================== 6. MAIN PIPELINE ====================
 def run_pipeline(spark, process_date):
     # Đọc dữ liệu
     df_cms = read_cms_pos(spark, process_date)
@@ -304,19 +294,14 @@ def run_pipeline(spark, process_date):
     print(f"HHS: clean={clean_hhs}, bad={bad_hhs}")
 
 if __name__ == "__main__":
-    # Lấy tham số ngày từ dòng lệnh (VD: 2026-05-20)
     if len(sys.argv) > 1:
         process_date = sys.argv[1]
     else:
         process_date = datetime.now().strftime("%Y-%m-%d")
 
-    # Khởi tạo Spark Session với GCS connector
     spark = SparkSession.builder \
         .appName("BronzeToSilver_HospitalAnalytics") \
-        .config("spark.hadoop.google.cloud.auth.service.account.enable", "true") \
-        .config("spark.hadoop.fs.gs.impl", "com.google.cloud.hadoop.fs.gcs.GoogleHadoopFileSystem") \
-        .config("spark.hadoop.fs.AbstractFileSystem.gs.impl", "com.google.cloud.hadoop.fs.gcs.GoogleHadoopFS") \
         .getOrCreate()
-
+    
     run_pipeline(spark, process_date)
     spark.stop()

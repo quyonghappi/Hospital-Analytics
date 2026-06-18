@@ -1,0 +1,282 @@
+config {
+  type: "table",
+  schema: "hospital_feature_store",
+  name: "fs_hospital_weekly",
+  description: "Bảng Feature Store tổng hợp dữ liệu hàng tuần cho mô hình ML dự đoán công suất giường bệnh",
+  tags: ["ml_prep", "feature_store"],
+  
+  partitionBy: "DATETIME_TRUNC(CAST(report_date AS DATETIME), YEAR)",
+  clusterBy: ["hospital_id", "state"]
+}
+
+WITH base AS (
+  SELECT
+    f.hospital_id,
+    f.collection_week                                          AS report_date,
+    f.state,
+    COALESCE(f.inpatient_beds_capacity,  0)                    AS inpatient_capacity,
+    COALESCE(f.inpatient_beds_used,      0)                    AS inpatient_used,
+    COALESCE(f.inpatient_occupancy_rate, 0)                    AS occupancy_rate,
+    COALESCE(f.icu_beds_capacity,        0)                    AS icu_capacity,
+    COALESCE(f.icu_beds_used,            0)                    AS icu_used,
+    COALESCE(f.icu_occupancy_rate,       0)                    AS icu_occupancy_rate,
+    COALESCE(f.covid_hospitalized_patients,    0)              AS covid_patients,
+    COALESCE(f.covid_icu_patients,             0)              AS covid_icu,
+    COALESCE(f.influenza_hospitalized_patients,0)              AS flu_patients,
+    COALESCE(f.influenza_icu_patients,         0)              AS flu_icu,
+    COALESCE(f.ed_visits_total,                0)              AS ed_visits,
+    COALESCE(f.covid_admissions_adult,         0)              AS covid_admit_adult,
+    COALESCE(f.covid_admissions_pediatric,     0)              AS covid_admit_peds,
+    COALESCE(f.pediatric_beds_capacity,        0)              AS peds_capacity,
+    COALESCE(f.pediatric_beds_used,            0)              AS peds_used,
+    CAST(COALESCE(f.is_corrected, FALSE) AS INT64)             AS is_corrected,
+    d.week_number,
+    d.month,
+    d.quarter,
+    d.year,
+    d.season,
+    CAST(d.is_holiday AS INT64)         AS is_holiday,
+    CAST(d.is_flu_season AS INT64)      AS is_flu_season,
+    d.disease_season,
+    d.healthcare_risk_level,
+    d.week_of_month
+
+  FROM ${ref("fact_hospital_utilization")} f
+
+  LEFT JOIN ${ref("dim_date")} d
+    ON f.collection_week = d.full_date
+
+  WHERE f.inpatient_beds_capacity > 0
+    AND f.collection_week BETWEEN '2020-08-01' AND '2024-05-10'
+),
+
+lagged AS (
+
+  SELECT *,
+
+    LAG(occupancy_rate,1)  OVER w AS occ_lag1,
+    LAG(occupancy_rate,2)  OVER w AS occ_lag2,
+    LAG(occupancy_rate,3)  OVER w AS occ_lag3,
+    LAG(occupancy_rate,4)  OVER w AS occ_lag4,
+    LAG(occupancy_rate,8)  OVER w AS occ_lag8,
+    LAG(occupancy_rate,12) OVER w AS occ_lag12,
+
+    AVG(occupancy_rate) OVER (
+      PARTITION BY hospital_id
+      ORDER BY report_date
+      ROWS BETWEEN 3 PRECEDING AND CURRENT ROW
+    ) AS occ_roll4,
+
+    AVG(occupancy_rate) OVER (
+      PARTITION BY hospital_id
+      ORDER BY report_date
+      ROWS BETWEEN 7 PRECEDING AND CURRENT ROW
+    ) AS occ_roll8,
+
+    LAG(icu_occupancy_rate,1) OVER w AS icu_lag1,
+    LAG(icu_occupancy_rate,4) OVER w AS icu_lag4,
+
+    AVG(icu_occupancy_rate) OVER (
+      PARTITION BY hospital_id
+      ORDER BY report_date
+      ROWS BETWEEN 3 PRECEDING AND CURRENT ROW
+    ) AS icu_roll4,
+
+    LAG(covid_patients,1) OVER w AS covid_lag1,
+    LAG(covid_patients,2) OVER w AS covid_lag2,
+    LAG(covid_patients,4) OVER w AS covid_lag4,
+
+    AVG(covid_patients) OVER (
+      PARTITION BY hospital_id
+      ORDER BY report_date
+      ROWS BETWEEN 3 PRECEDING AND CURRENT ROW
+    ) AS covid_roll4,
+
+    LAG(flu_patients,1) OVER w AS flu_lag1,
+    LAG(flu_patients,4) OVER w AS flu_lag4,
+
+    AVG(flu_patients) OVER (
+      PARTITION BY hospital_id
+      ORDER BY report_date
+      ROWS BETWEEN 3 PRECEDING AND CURRENT ROW
+    ) AS flu_roll4,
+
+    LAG(ed_visits,1) OVER w AS ed_lag1,
+
+    AVG(ed_visits) OVER (
+      PARTITION BY hospital_id
+      ORDER BY report_date
+      ROWS BETWEEN 3 PRECEDING AND CURRENT ROW
+    ) AS ed_roll4,
+
+    SAFE_DIVIDE(
+      occupancy_rate - LAG(occupancy_rate,1) OVER w,
+      NULLIF(LAG(occupancy_rate,1) OVER w, 0)
+    ) AS occ_wow_pct_change,
+
+    LEAD(occupancy_rate,1) OVER w AS target_occupancy_next_week
+
+  FROM base
+
+  WINDOW w AS (
+    PARTITION BY hospital_id
+    ORDER BY report_date
+  )
+),
+
+hosp AS (
+
+  SELECT
+    hospital_id,
+    hospital_name,
+    zip_code,
+    county_fips,
+    hospital_type,
+    COALESCE(certified_bed_count, 0) AS certified_bed_count
+
+  FROM ${ref("dim_hospital")}
+
+  QUALIFY ROW_NUMBER() OVER (
+    PARTITION BY hospital_id
+    ORDER BY hospital_id
+  ) = 1
+),
+
+pop AS (
+
+  SELECT
+    p.county_fips,
+    p.total_population,
+    p.pop_65_plus_pct,
+    p.population_density,
+    p.median_household_income,
+    p.poverty_rate_pct,
+    p.uninsured_rate_pct,
+    p.physicians_per_100k,
+    p.nurses_per_100k,
+    p.rucc_code,
+    p.metro_nonmetro_flag,
+    g.county_name,
+    g.hrr_region,
+    g.area_km2
+
+  FROM ${ref("dim_population")} p
+
+  LEFT JOIN ${ref("dim_geography")} g
+    USING (county_fips)
+
+  WHERE p.census_year = (
+    SELECT MAX(census_year)
+    FROM ${ref("dim_population")}
+  )
+)
+
+SELECT
+
+  -- Keys
+  l.hospital_id,
+  l.report_date,
+  l.state,
+
+  -- Hospital info
+  h.hospital_name,
+  h.zip_code,
+
+  -- Current utilization
+  l.inpatient_capacity,
+  l.inpatient_used,
+  l.occupancy_rate,
+  l.icu_capacity,
+  l.icu_used,
+  l.icu_occupancy_rate,
+  l.covid_patients,
+  l.covid_icu,
+  l.flu_patients,
+  l.flu_icu,
+  l.ed_visits,
+  l.covid_admit_adult,
+  l.covid_admit_peds,
+  l.peds_capacity,
+  l.peds_used,
+  l.is_corrected,
+
+  -- Lag & rolling features
+  l.occ_lag1,
+  l.occ_lag2,
+  l.occ_lag3,
+  l.occ_lag4,
+  l.occ_lag8,
+  l.occ_lag12,
+  l.occ_roll4,
+  l.occ_roll8,
+
+  l.icu_lag1,
+  l.icu_lag4,
+  l.icu_roll4,
+
+  l.covid_lag1,
+  l.covid_lag2,
+  l.covid_lag4,
+  l.covid_roll4,
+
+  l.flu_lag1,
+  l.flu_lag4,
+  l.flu_roll4,
+
+  l.ed_lag1,
+  l.ed_roll4,
+
+  l.occ_wow_pct_change,
+
+  -- Calendar features
+  l.week_number,
+  l.month,
+  l.quarter,
+  l.year,
+  l.season,
+  l.is_holiday,
+  l.is_flu_season,
+  l.disease_season,
+  l.healthcare_risk_level,
+  l.week_of_month,
+
+  -- Hospital static
+  h.hospital_type,
+  h.certified_bed_count,
+  h.county_fips,
+
+  -- Population / geography
+  p.total_population,
+  p.pop_65_plus_pct,
+  p.population_density,
+  p.median_household_income,
+  p.poverty_rate_pct,
+  p.uninsured_rate_pct,
+  p.physicians_per_100k,
+  p.nurses_per_100k,
+  p.rucc_code,
+  p.metro_nonmetro_flag,
+  p.county_name,
+  p.hrr_region,
+  p.area_km2,
+
+  -- Targets
+  l.target_occupancy_next_week,
+
+  CAST(
+    l.target_occupancy_next_week > 0.85
+    AS INT64
+  ) AS target_high_strain,
+
+  CURRENT_TIMESTAMP() AS feature_computed_at
+
+FROM lagged l
+
+LEFT JOIN hosp h
+  USING (hospital_id)
+
+LEFT JOIN pop p
+  ON h.county_fips = p.county_fips
+
+WHERE l.target_occupancy_next_week IS NOT NULL
+  AND l.occ_lag4 IS NOT NULL

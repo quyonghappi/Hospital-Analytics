@@ -1,0 +1,14 @@
+fastapi==0.111.0
+uvicorn==0.29.0
+pydantic>=2.7.0
+anyio>=3.7.1
+
+google-cloud-aiplatform==1.54.0
+google-cloud-bigquery==3.23.0
+google-genai>=0.1.0
+
+pandas>=2.0.0
+db-dtypes>=1.2.0  # Required cho BigQuery DataFrame to_dataframe()
+
+pyyaml==6.0.1
+python-dotenv==1.0.1

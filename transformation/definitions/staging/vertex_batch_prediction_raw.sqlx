@@ -1,0 +1,37 @@
+config {
+    type: "operations",
+    hasOutput: true,
+    schema: "ml_predictions_dev",
+    tags: ["ml_ops", "pre_provisioning"],
+    description: "Raw batch predictions from Vertex AI. Pre-provisioned by Dataform, populated by Python inference script."
+}
+
+CREATE TABLE IF NOT EXISTS ${self()}
+(
+    model_name STRING NOT NULL,
+    hospital_id STRING NOT NULL,
+    report_date DATE NOT NULL,
+    run_date DATE NOT NULL,
+    pred_occupancy_next_week FLOAT64 NOT NULL,
+    pred_high_strain INT64 NOT NULL,
+    pred_high_strain_prob FLOAT64 NOT NULL,
+    actual_occupancy FLOAT64,
+    actual_high_strain INT64,
+    abs_error FLOAT64,
+    shap_base_value FLOAT64,
+    top1_feature STRING, 
+    top1_shap FLOAT64, 
+    top1_direction STRING,
+    top2_feature STRING, 
+    top2_shap FLOAT64, 
+    top2_direction STRING,
+    top3_feature STRING, 
+    top3_shap FLOAT64, 
+    top3_direction STRING,
+    explanation STRING,
+    model_version STRING,
+    data_source STRING,
+    predicted_at TIMESTAMP NOT NULL
+)
+PARTITION BY run_date
+CLUSTER BY model_name, hospital_id;

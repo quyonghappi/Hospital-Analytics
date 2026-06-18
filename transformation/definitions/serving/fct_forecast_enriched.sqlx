@@ -1,0 +1,66 @@
+config {
+    type: "incremental",
+    schema: "ml_serving",
+    name: "fct_forecast_enriched",
+    description: "Enriched AI predictions for Looker Studio and Airflow Alert Engine",
+    partitionBy: "forecast_date",
+    clusterBy: ["county_fips", "hospital_id"],
+    uniqueKey: ["hospital_id", "forecast_date", "run_date"],
+    tags: ["daily_serving", "layer3"]
+}
+
+/* 1. Đọc và lọc dữ liệu mới nhất nếu chạy Incremental */
+WITH raw_ml AS (
+    SELECT *
+    FROM ${ref("ml_prediction_result")}
+    ${when(incremental(), `WHERE run_date >= TIMESTAMP_SUB((SELECT MAX(run_date) FROM ${self()}), INTERVAL 3 DAY)`)}
+),
+
+/* 2. Khử trùng lặp: Lấy bản dự báo mới nhất cho mỗi bệnh viện trong 1 ngày dự báo */
+dedup_ml AS (
+    SELECT *
+    FROM raw_ml
+    QUALIFY ROW_NUMBER() OVER(
+        PARTITION BY hospital_id, forecast_date 
+        ORDER BY run_date DESC, forecast_id DESC
+    ) = 1
+),
+
+/* 3. Dàn phẳng Dimensions: Lấy thông tin tọa độ và định danh */
+dim_enriched AS (
+    SELECT 
+        h.hospital_id,
+        h.hospital_name,
+        h.county_fips,
+        g.county_name,
+        h.latitude,
+        h.longitude,
+        h.staffed_beds_capacity
+    FROM ${ref("dim_hospital")} h
+    LEFT JOIN ${ref("dim_geography")} g USING (county_fips)
+)
+
+/* 4. Tổng hợp và tính toán Business Flags */
+SELECT 
+    m.forecast_id,
+    m.hospital_id,
+    d.hospital_name,
+    d.county_fips,
+    d.county_name,
+    d.latitude,
+    d.longitude,
+    d.staffed_beds_capacity,
+    m.forecast_date,
+    m.run_date,
+    m.predicted_occupancy_rate,
+    m.predicted_patient_volume,
+    m.confidence_lower_95,
+    m.confidence_upper_95,
+    m.shap_feature_1,
+    m.shap_feature_2,
+    m.shap_feature_3,
+    m.model_version,
+    -- Cờ cảnh báo sớm nếu dự báo quá tải vượt 90%
+    CAST(IF(m.predicted_occupancy_rate > 0.90, TRUE, FALSE) AS BOOL) AS alert_flag
+FROM dedup_ml m
+LEFT JOIN dim_enriched d USING (hospital_id)

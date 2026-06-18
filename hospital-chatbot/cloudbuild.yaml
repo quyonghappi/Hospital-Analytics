@@ -1,0 +1,74 @@
+substitutions:
+  _REGION: "asia-southeast1"
+  _PROJECT_ID: "project-8e2366a6-d3cc-40ee-9de"
+  _APP_NAME: "hospital-chatbot"
+
+steps:
+  # 1. CI: Unit tests — scaffolded, enable once test_chatbot_engine.py + test_api.py exist
+  # - name: "python:3.12-slim"
+  #   id: "run-chatbot-tests"
+  #   entrypoint: "bash"
+  #   args:
+  #     - "-c"
+  #     - |
+  #         cd hospital-chatbot
+  #         pip install -r requirements-test.txt
+  #         pytest test_chatbot_engine.py test_api.py -v
+
+  # 2. Build image with layer cache
+  - name: "gcr.io/cloud-builders/docker"
+    id: "build-image"
+    args:
+      - "build"
+      - "--tag"
+      - "${_REGION}-docker.pkg.dev/${_PROJECT_ID}/app/${_APP_NAME}:$SHORT_SHA"
+      - "--tag"
+      - "${_REGION}-docker.pkg.dev/${_PROJECT_ID}/app/${_APP_NAME}:latest"
+      - "--cache-from"
+      - "${_REGION}-docker.pkg.dev/${_PROJECT_ID}/app/${_APP_NAME}:latest"
+      - "."
+
+  # 3. Push versioned + latest tags
+  - name: "gcr.io/cloud-builders/docker"
+    id: "push-image"
+    waitFor: ["build-image"]
+    entrypoint: "bash"
+    args:
+      - "-c"
+      - |
+        docker push ${_REGION}-docker.pkg.dev/${_PROJECT_ID}/app/${_APP_NAME}:$SHORT_SHA
+        docker push ${_REGION}-docker.pkg.dev/${_PROJECT_ID}/app/${_APP_NAME}:latest
+
+  # 4. Deploy to Cloud Run
+  - name: "gcr.io/google.com/cloudsdktool/cloud-sdk:slim"
+    id: "deploy-cloud-run"
+    waitFor: ["push-image"]
+    entrypoint: "bash"
+    args:
+      - "-c"
+      - |
+        gcloud run deploy ${_APP_NAME} \
+          --image=${_REGION}-docker.pkg.dev/${_PROJECT_ID}/app/${_APP_NAME}:$SHORT_SHA \
+          --region=${_REGION} \
+          --project=${_PROJECT_ID} \
+          --service-account=chatbot-sa@${_PROJECT_ID}.iam.gserviceaccount.com \
+          --cpu=2 \
+          --memory=2048Mi \
+          --min-instances=1 \
+          --max-instances=5 \
+          --concurrency=80 \
+          --timeout=120s \
+          --set-env-vars="PROJECT_ID=${_PROJECT_ID},REGION=${_REGION},SCHEMA_PATH=config/schema_context.yaml" \
+          --no-allow-unauthenticated
+
+  # 5. Smoke check — verify image is pullable from AR
+  - name: "gcr.io/cloud-builders/docker"
+    id: "smoke-check"
+    waitFor: ["push-image"]
+    args:
+      - "pull"
+      - "${_REGION}-docker.pkg.dev/${_PROJECT_ID}/app/${_APP_NAME}:$SHORT_SHA"
+
+options:
+  machineType: "E2_MEDIUM"
+  logging: CLOUD_LOGGING_ONLY

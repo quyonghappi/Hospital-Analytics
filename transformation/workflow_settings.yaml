@@ -9,5 +9,5 @@ datasetSuffix: "dev"
 
 vars:
   env: "dev"
-  staging_dataset: "hospital_staging_dev" # Chứa external tables từ GCS Silver
-  execution_date: "1970-01-01" # Phục vụ Incremental Fact Loading
+  staging_dataset: "hospital_staging_dev"
+  execution_date: "1970-01-01"

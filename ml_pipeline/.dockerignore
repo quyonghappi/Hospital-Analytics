@@ -1,0 +1,22 @@
+# Python build artifacts & environments
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+*.egg-info/
+.ipynb_checkpoints/
+
+notebooks/
+*.ipynb
+
+.git/
+.gitignore
+.vscode/
+.idea/
+
+data/
+*.parquet
+*.csv
+*.pkl

@@ -1,0 +1,8 @@
+# GCP Secrets
+.gcp/
+*-key.json
+
+# Environment
+.env
+.venv/
+__pycache__/

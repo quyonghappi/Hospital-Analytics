@@ -1,0 +1,182 @@
+# config/schema_context.yaml
+#
+# Single source of truth for:
+#   - Table paths and column definitions (injected verbatim into LLM system prompt)
+#   - Business glossary (term → SQL mapping)
+#   - SQL constraints (ALL constraints live here; chatbot_engine.py reads this list directly)
+#
+# Supported Use Cases:
+#   UC-01  Current occupancy status
+#   UC-02  Overload risk forecast summary
+#   UC-03  Alert explanation (SHAP drivers)
+#   UC-04  Capacity gap / available beds
+#   UC-05  Trend analysis (rolling 4-week, ICU)
+#   UC-06  Benchmarking / HRR + county ranking
+
+project_id: "project-8e2366a6-d3cc-40ee-9de"
+region: "asia-southeast1"
+
+datasets:
+  warehouse: "hospital_dwh_dev"
+  ml_predictions: "ml_predictions_dev"
+  observability: "ml_observability_dev"
+
+tables:
+  fact_hospital_utilization:
+    full_path: "`project-8e2366a6-d3cc-40ee-9de.hospital_dwh_dev.fact_hospital_utilization`"
+    description: "Weekly hospital operational metrics — primary fact table. Source for all current occupancy, capacity gap, ICU utilization, and trend queries."
+    granularity: "One row per hospital per week (collection_week)"
+    current_data_pattern: "WHERE collection_week = (SELECT MAX(collection_week) FROM `...fact_hospital_utilization`)"
+    columns:
+      hospital_id: "STRING — FK to dim_hospital"
+      collection_week: "DATE — weekly snapshot. 'Current' = MAX(collection_week)"
+      state: "STRING — 2-character state code, e.g. 'CA', 'TX'. Use this column for state filtering; dim_hospital does NOT have a state column."
+      inpatient_beds_capacity: "FLOAT — total staffed inpatient beds available this week"
+      inpatient_beds_used: "FLOAT — occupied inpatient beds this week"
+      icu_beds_capacity: "FLOAT — total ICU beds available"
+      icu_beds_used: "FLOAT — occupied ICU beds"
+      inpatient_occupancy_rate: "FLOAT — inpatient_beds_used / inpatient_beds_capacity, range 0.0–1.0. Always display as percentage. This is the primary occupancy metric."
+      icu_occupancy_rate: "FLOAT — icu_beds_used / icu_beds_capacity, range 0.0–1.0. Stored column; use directly, no need to compute inline."
+      # overload_flag: "BOOLEAN — TRUE if inpatient_occupancy_rate > 0.9"
+      covid_hospitalized_patients: "FLOAT — total COVID inpatient census"
+      covid_icu_patients: "FLOAT — COVID patients in ICU"
+      influenza_hospitalized_patients: "FLOAT — total influenza inpatient census"
+      influenza_icu_patients: "FLOAT — influenza patients in ICU"
+      ed_visits_total: "FLOAT — total emergency department visits this week"
+      covid_admissions_adult: "FLOAT — adult COVID admissions this week"
+      covid_admissions_pediatric: "FLOAT — pediatric COVID admissions this week"
+      pediatric_beds_capacity: "FLOAT — total pediatric beds available"
+      pediatric_beds_used: "FLOAT — occupied pediatric beds"
+      # is_corrected: "BOOLEAN — TRUE if this row is a corrected/revised submission"
+      _omit_from_prompt: # Engine skips these keys starting with _
+        - is_corrected
+        - overload_flag
+
+  ml_forecast_results:
+    full_path: "`project-8e2366a6-d3cc-40ee-9de.ml_predictions_dev.ml_forecast_results`"
+    description: "7-day ahead occupancy forecasts produced by Vertex AI model. Source for overload risk, alert explanation, and SHAP-driven queries. hospital_name and state are denormalized into this table — no join to dim_hospital required for basic forecast queries."
+    granularity: "One row per hospital per forecast_date per run_date"
+    current_data_pattern: "WHERE run_date = (SELECT MAX(run_date) FROM `...ml_forecast_results`)"
+    columns:
+      hospital_id: "STRING — FK to dim_hospital (optional join; hospital_name and state already denormalized here)"
+      hospital_name: "STRING — full official facility name (denormalized)"
+      state: "STRING — 2-character state code (denormalized)"
+      forecast_date: "DATE — the future date being predicted"
+      run_date: "DATE — when the model ran. 'Latest forecast' = MAX(run_date)"
+      predicted_occupancy_rate: "FLOAT — forecasted occupancy, range 0–100 (stored as percentage, NOT 0.0–1.0). Display directly — NEVER multiply by 100. Example: 99.0 means 99%."
+      confidence_lower_95: "FLOAT — lower bound of 95% confidence interval, range 0–100 (stored as percentage). Display directly — NEVER multiply by 100."
+      confidence_upper_95: "FLOAT — upper bound of 95% confidence interval, range 0–100 (stored as percentage). Display directly — NEVER multiply by 100."
+      alert_flag: "BOOLEAN — TRUE if predicted_occupancy_rate > 90 (threshold is 90, not 0.9, because column is 0–100 range)"
+      shap_feature_1: "STRING — name of the strongest contributing feature driving the forecast"
+      shap_feature_2: "STRING — second strongest contributing feature"
+      shap_feature_3: "STRING — third strongest contributing feature"
+      shap_value_1: "FLOAT — SHAP value magnitude for shap_feature_1 (positive = increases risk)"
+      shap_value_2: "FLOAT — SHAP value magnitude for shap_feature_2"
+      shap_value_3: "FLOAT — SHAP value magnitude for shap_feature_3"
+      model_version: "STRING — Vertex AI model version, e.g. v2.0"
+
+  dim_hospital:
+    full_path: "`project-8e2366a6-d3cc-40ee-9de.hospital_dwh_dev.dim_hospital`"
+    description: "Hospital master reference — facility attributes and designed capacity ceiling. Join to fact tables via hospital_id. Join to dim_geography via county_fips for county/HRR queries. NOTE: dim_hospital does NOT have a state column — use state from fact_hospital_utilization or ml_forecast_results."
+    granularity: "One row per hospital (keyed by CMS CCN)"
+    columns:
+      hospital_id: "STRING — Primary Key (CMS CCN)"
+      hospital_name: "STRING — full official facility name"
+      hospital_type: "FLOAT — facility type code (numeric)"
+      certified_bed_count: "INTEGER — designed maximum licensed bed capacity ceiling"
+      county_fips: "STRING — FK to dim_geography.county_fips"
+      zip_code: "STRING — facility ZIP code"
+
+  dim_geography:
+    full_path: "`project-8e2366a6-d3cc-40ee-9de.hospital_dwh_dev.dim_geography`"
+    description: "Geographic hierarchy for county, state, and Hospital Referral Region (HRR) grouping. Required for all county-level or HRR-level benchmarking and aggregation queries. Join path: fact → dim_hospital → dim_geography via county_fips."
+    granularity: "One row per county FIPS code"
+    columns:
+      county_fips: "STRING — Primary Key"
+      county_name: "STRING — full county name"
+      state_code: "STRING — 2-character state code"
+      state_name: "STRING — full state name"
+      hrr_region: "STRING — Hospital Referral Region name (geographic market boundary for care)"
+      area_km2: "FLOAT — county area in square kilometers"
+
+business_glossary:
+  # UC-01 — Occupancy status
+  overloaded: "inpatient_occupancy_rate > 0.9 OR overload_flag = TRUE"
+  critical: "inpatient_occupancy_rate >= 0.9 — label CRITICAL"
+  warning: "inpatient_occupancy_rate BETWEEN 0.7 AND 0.9 — label WARNING"
+  normal: "inpatient_occupancy_rate < 0.7 — label NORMAL"
+  current_occupancy: "MAX(collection_week) in fact_hospital_utilization"
+  occupancy_rate: "inpatient_occupancy_rate column in fact_hospital_utilization — range 0–100 (stored as percentage). Display directly — NEVER multiply by 100."
+
+  # UC-02 — Forecast / risk
+  at_risk: "alert_flag = TRUE in ml_forecast_results at latest run_date — note: predicted_occupancy_rate > 90 (column stored as 0–100)"
+  latest_forecast: "MAX(run_date) in ml_forecast_results"
+  7_day_forecast_window: "forecast_date BETWEEN CURRENT_DATE() AND DATE_ADD(CURRENT_DATE(), INTERVAL 7 DAY)"
+
+  # UC-04 — Capacity gap
+  available_capacity: "inpatient_beds_capacity - inpatient_beds_used AS available_beds — always pair with current week filter"
+  below_threshold: "inpatient_occupancy_rate < 0.7 — hospital has capacity headroom"
+  available_icu_beds: "icu_beds_capacity - icu_beds_used AS available_icu_beds"
+
+  # UC-05 — Trend analysis
+  icu_occupancy: "icu_occupancy_rate column — stored column, use directly. Multiply by 100 for display as percentage."
+  trend_window_4_weeks: "WHERE collection_week >= DATE_SUB(CURRENT_DATE(), INTERVAL 28 DAY) GROUP BY DATE_TRUNC(collection_week, WEEK)"
+  persistent_overload: "hospital with inpatient_occupancy_rate > 0.8 sustained across 4 or more consecutive weekly snapshots"
+
+  # UC-06 — Benchmarking
+  hrr_benchmark: "RANK() OVER (PARTITION BY g.hrr_region ORDER BY inpatient_occupancy_rate DESC) — requires dim_geography join"
+  county_benchmark: "RANK() OVER (PARTITION BY g.county_name ORDER BY inpatient_occupancy_rate DESC) — requires dim_geography join"
+
+  # State filtering
+  state_filter: "Use f.state (from fact_hospital_utilization) for state filtering — NOT d.state. dim_hospital does not have a state column."
+
+sql_constraints:
+  # ── Structural / safety ───────────────────────────────────────────────────
+  - "Always use fully qualified table names with backtick escaping, e.g. `project.dataset.table`"
+  - "Always LIMIT results to 100 rows maximum"
+  - "Only generate BigQuery Standard SQL"
+  - "Never generate UPDATE, INSERT, DELETE, DROP, CREATE, TRUNCATE, MERGE"
+
+  # ── Column name rules (CRITICAL — prevents dry-run failures) ─────────────
+  - "Inpatient beds available: use inpatient_beds_capacity (NOT staffed_beds, NOT beds_capacity)"
+  - "Inpatient beds occupied: use inpatient_beds_used (NOT beds_in_use, NOT staffed_beds_used)"
+  - "ICU beds available: use icu_beds_capacity (NOT icu_beds_total)"
+  - "ICU beds occupied: use icu_beds_used (NOT icu_beds_in_use)"
+  - "Primary occupancy metric: use inpatient_occupancy_rate (NOT occupancy_rate — that column does not exist)"
+  - "ICU occupancy metric: use icu_occupancy_rate (stored column — do NOT compute inline)"
+  - "Hospital capacity ceiling: use certified_bed_count from dim_hospital (NOT staffed_beds_capacity)"
+  - "dim_hospital does NOT have latitude, longitude, or state columns — never reference d.state or d.latitude"
+  - "State filtering: use f.state from fact_hospital_utilization, or denormalized state in ml_forecast_results"
+  - "Available beds calculation: inpatient_beds_capacity - inpatient_beds_used AS available_beds"
+
+  # ── Temporal patterns (UC-01, UC-02) ─────────────────────────────────────
+  - "'Current' occupancy data: WHERE collection_week = (SELECT MAX(collection_week) FROM `project-8e2366a6-d3cc-40ee-9de.hospital_dwh_dev.fact_hospital_utilization`)"
+  - "'Latest forecast': WHERE run_date = (SELECT MAX(run_date) FROM `project-8e2366a6-d3cc-40ee-9de.ml_predictions_dev.ml_forecast_results`)"
+  - "Never use hardcoded date literals — always derive from MAX() subquery or CURRENT_DATE()"
+
+  # ── Display formatting (UC-01 through UC-06) ──────────────────────────────
+  - "Fact table occupancy rates (inpatient_occupancy_rate, icu_occupancy_rate in fact_hospital_utilization): stored as 0.0–1.0 — must multiply: ROUND(inpatient_occupancy_rate * 100, 1) AS occupancy_pct"
+  - "Fact table ICU occupancy: ROUND(icu_occupancy_rate * 100, 1) AS icu_occupancy_pct"
+  - "CRITICAL — Forecast occupancy (predicted_occupancy_rate, confidence_lower_95, confidence_upper_95 in ml_forecast_results): stored as 0–100 already — NEVER multiply by 100. Use ROUND(predicted_occupancy_rate, 1) AS predicted_pct directly."
+  - "Status labels: inpatient_occupancy_rate >= 0.9 → 'CRITICAL', 0.7–0.9 → 'WARNING', < 0.7 → 'NORMAL' — use CASE expression"
+  - "Hospital name search: LOWER(d.hospital_name) LIKE LOWER('%keyword%') for dim_hospital; LOWER(f.hospital_name) LIKE LOWER('%keyword%') for ml_forecast_results"
+
+  # ── Trend analysis (UC-05) ───────────────────────────────────────────────
+  - "Trend aggregation: GROUP BY DATE_TRUNC(collection_week, WEEK) AS week_start — never GROUP BY raw collection_week for multi-week trend queries"
+  - "Rolling 4-week window: WHERE collection_week >= DATE_SUB(CURRENT_DATE(), INTERVAL 28 DAY)"
+  - "For trend queries select week_start, hospital_name (from dim_hospital), AVG(inpatient_occupancy_rate), AVG(icu_occupancy_rate)"
+
+  # ── Benchmarking / ranking (UC-06) ───────────────────────────────────────
+  - "Ranking queries: always use RANK() OVER (PARTITION BY <scope> ORDER BY ...) inside a CTE (WITH clause) — never inline in a bare SELECT"
+  - "CTE syntax: WITH cte_name AS (SELECT ...) SELECT * FROM cte_name ORDER BY ... LIMIT 100"
+
+  # ── Geography joins (UC-04, UC-05, UC-06) ────────────────────────────────
+  - "County or HRR queries: JOIN dim_hospital d ON f.hospital_id = d.hospital_id, then JOIN dim_geography g ON d.county_fips = g.county_fips"
+  - "HRR field: g.hrr_region — only available after dim_geography join"
+
+  # ── ml_forecast_results specific ─────────────────────────────────────────
+  - "For forecast queries: hospital_name and state are already in ml_forecast_results — no need to join dim_hospital unless you need county_fips for geography"
+  - "SHAP values: shap_value_1/2/3 are numeric FLOAT columns giving magnitude; shap_feature_1/2/3 are STRING columns giving feature names"
+
+  # ── Output hygiene ────────────────────────────────────────────────────────
+  - "Return ONLY the raw SQL query — no markdown fences, no explanation text, no preamble"

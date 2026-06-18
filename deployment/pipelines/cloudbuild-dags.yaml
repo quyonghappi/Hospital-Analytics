@@ -1,0 +1,48 @@
+substitutions:
+  _COMPOSER_BUCKET: "gs://asia-southeast1-hospital-co-4dc34418-bucket"
+
+steps:
+  # 1. CI / VALIDATION: Parse DAGs để bắt lỗi syntax & import
+  - name: "python:3.10-slim" # Khuyên dùng version Python trùng với Cloud Composer của bạn (thường là 3.8 - 3.11)
+    id: "validate-dags"
+    entrypoint: "bash"
+    args:
+      - "-c"
+      - |
+        echo "Installing Airflow for parsing validation..."
+        # Cài đặt airflow core nhẹ nhất có thể để pass bước parse
+        # Điều chỉnh version 2.x.x cho khớp với version Composer của bạn. 
+        pip install "apache-airflow==2.7.3" --constraint "https://raw.githubusercontent.com/apache/airflow/constraints-2.7.3/constraints-3.10.txt" > /dev/null
+
+        echo "Validating DAGs..."
+        python -c "
+        import sys
+        from airflow.models import DagBag
+        # Khai báo dags_folder là thư mục đang chứa code
+        dags_folder = 'orchestration/dags'
+        dagbag = DagBag(dag_folder=dags_folder, include_examples=False)
+
+        if len(dagbag.import_errors) > 0:
+            print('DAG Parsing Errors Found:')
+            for filepath, error in dagbag.import_errors.items():
+                print(f'\nFile: {filepath}\nError: {error}')
+            sys.exit(1)
+        else:
+            print(f'Successfully parsed {len(dagbag.dags)} DAGs. No errors.')
+        "
+
+  # 2. CD / DEPLOYMENT: Sync DAGs to Composer Bucket
+  - name: "gcr.io/google.com/cloudsdktool/cloud-sdk:slim"
+    id: "deploy-dags"
+    waitFor: ["validate-dags"]
+    entrypoint: "gsutil"
+    args:
+      - "-m"
+      - "rsync"
+      - "-r"
+      - "-d"
+      - "orchestration/dags"
+      - "${_COMPOSER_BUCKET}/dags"
+
+options:
+  machineType: "E2_MEDIUM"

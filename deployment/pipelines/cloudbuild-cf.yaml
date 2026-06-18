@@ -1,0 +1,41 @@
+substitutions:
+  _REGION: "asia-southeast1"
+  _PROJECT_ID: "project-8e2366a6-d3cc-40ee-9de"
+
+steps:
+  - name: "python:3.12-slim"
+    id: "ci-linter"
+    entrypoint: "bash"
+    args:
+      - "-c"
+      - |
+        pip install flake8
+        flake8 cloud_functions/ --count --select=E9,F63,F7,F82 --show-source --statistics
+
+  - name: "gcr.io/google.com/cloudsdktool/cloud-sdk:slim"
+    id: "deploy-cf"
+    waitFor: ["ci-linter"]
+    entrypoint: "bash"
+    args:
+      - "-c"
+      - |
+        gcloud functions deploy hospital-inference-pipeline \
+          --gen2 \
+          --runtime=python312 \
+          --region=${_REGION} \
+          --project=${_PROJECT_ID} \
+          --source=cloud_functions \
+          --entry-point=inference_entrypoint \
+          --memory=4096MB \
+          --cpu=2 \
+          --concurrency=8 \
+          --min-instances=0 \
+          --max-instances=10 \
+          --timeout=540s \
+          --service-account=hospital-ml-pipeline@${_PROJECT_ID}.iam.gserviceaccount.com \
+          --trigger-http \
+          --no-allow-unauthenticated
+
+options:
+  machineType: "E2_MEDIUM"
+  logging: CLOUD_LOGGING_ONLY

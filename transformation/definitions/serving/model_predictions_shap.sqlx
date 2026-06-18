@@ -1,0 +1,61 @@
+config {
+  type: "incremental",
+  schema: "ml_observability_dev",
+  name: "model_predictions_shap",
+  description: "Bảng lưu trữ dự báo và explainability (SHAP) từ Vertex AI",
+  
+  /* Cấu hình Partition và Cluster tối ưu cho BigQuery */
+  bigquery: {
+    partitionBy: "report_date",
+    clusterBy: ["model_name", "hospital_id"],
+    requirePartitionFilter: true
+  },
+
+  /* Khai báo schema chuẩn để hiển thị Data Dictionary trên BigQuery/Looker */
+  columns: {
+    model_name: "Tên và version của model",
+    hospital_id: "Mã định danh bệnh viện",
+    report_date: "Ngày mục tiêu dự báo",
+    pred_occupancy_next_week: "Tỷ lệ lấp đầy dự báo",
+    pred_high_strain: "Dự báo có quá tải (0/1)",
+    actual_high_strain: "Thực tế có quá tải (backfill sau)"
+  }
+}
+
+SELECT
+  CAST(model_name AS STRING) AS model_name,
+  CAST(hospital_id AS STRING) AS hospital_id,
+  
+  -- Convert STRING 'YYYY-MM-DD' sang DATE an toàn
+  SAFE_CAST(report_date AS DATE) AS report_date,
+  
+  CAST(pred_occupancy_next_week AS FLOAT64) AS pred_occupancy_next_week,
+  CAST(pred_high_strain AS INT64) AS pred_high_strain,
+  CAST(pred_high_strain_prob AS FLOAT64) AS pred_high_strain_prob,
+  
+  -- Các trường actual sẽ là NULL lúc mới predict, cập nhật ở luồng backfill
+  CAST(actual_occupancy AS FLOAT64) AS actual_occupancy,
+  CAST(actual_high_strain AS INT64) AS actual_high_strain,
+  CAST(abs_error AS FLOAT64) AS abs_error,
+  
+  CAST(shap_base_value AS FLOAT64) AS shap_base_value,
+  CAST(top1_feature AS STRING) AS top1_feature,
+  CAST(top1_shap AS FLOAT64) AS top1_shap,
+  CAST(top1_direction AS STRING) AS top1_direction,
+  CAST(top2_feature AS STRING) AS top2_feature,
+  CAST(top2_shap AS FLOAT64) AS top2_shap,
+  CAST(top2_direction AS STRING) AS top2_direction,
+  CAST(top3_feature AS STRING) AS top3_feature,
+  CAST(top3_shap AS FLOAT64) AS top3_shap,
+  CAST(top3_direction AS STRING) AS top3_direction,
+  
+  CAST(explanation AS STRING) AS explanation
+
+FROM ${ref("vertex_batch_predictions_raw")}
+
+-- Logic Incremental: Chỉ lấy dữ liệu dự báo mới hơn ngày gần nhất đã có trong bảng
+${when(incremental(), `
+  WHERE SAFE_CAST(report_date AS DATE) > (
+    SELECT MAX(report_date) FROM ${self()}
+  )
+`)}

@@ -51,43 +51,43 @@ resource "google_bigquery_dataset" "ml_predictions" {
   })
 }
 
-# ------------------------------------------------------------------------
-# 4. ML FORECAST RESULTS TABLE (PRE-DEFINED SCHEMA & PARTITIONING)
-# ------------------------------------------------------------------------
-resource "google_bigquery_table" "ml_forecast_results" {
-  dataset_id          = google_bigquery_dataset.ml_predictions.dataset_id
-  table_id            = "ml_forecast_results"
-  deletion_protection = var.env == "prod" ? true : false
 
-  # Partition theo ngày dự báo để Looker Studio query rẻ và nhanh
-  time_partitioning {
-    type                     = "DAY"
-    field                    = "forecast_date"
-    require_partition_filter = true
-  }
+# ========================================================================
+# 4. ML OBSERVABILITY DATASET (MLOPS LAYER)
+# ========================================================================
+resource "google_bigquery_dataset" "ml_observability" {
+  dataset_id                  = "ml_observability_${var.env}"
+  friendly_name               = "MLOps Monitoring & Evaluation (${var.env})"
+  description                 = "Lưu trữ log dự báo của nhiều mô hình, SHAP chi tiết và actuals (ground truth) để monitor Model Drift."
+  project                     = var.project_id
+  location                    = var.region
+  delete_contents_on_destroy  = var.env == "prod" ? false : var.force_destroy
 
-  # Cluster theo hospital_id để tối ưu UI filter (khi user chọn 1 bệnh viện trên bản đồ)
-  clustering = ["hospital_id"]
-
-  schema = <<EOF
-[
-  {"name": "forecast_id", "type": "STRING", "mode": "REQUIRED", "description": "UUID của dòng dự báo"},
-  {"name": "hospital_id", "type": "STRING", "mode": "REQUIRED", "description": "Khóa ngoại nối với dim_hospital"},
-  {"name": "forecast_date", "type": "DATE", "mode": "REQUIRED", "description": "Ngày mà kết quả dự báo hướng tới"},
-  {"name": "run_date", "type": "DATE", "mode": "REQUIRED", "description": "Ngày chạy mô hình sinh ra dự báo"},
-  {"name": "predicted_occupancy_rate", "type": "FLOAT64", "mode": "NULLABLE", "description": "Tỷ lệ lấp đầy dự báo"},
-  {"name": "predicted_patient_volume", "type": "INT64", "mode": "NULLABLE", "description": "Lưu lượng bệnh nhân dự báo"},
-  {"name": "predicted_los", "type": "FLOAT64", "mode": "NULLABLE", "description": "Thời gian lưu trú trung bình dự kiến"},
-  {"name": "confidence_lower_95", "type": "FLOAT64", "mode": "NULLABLE", "description": "Giới hạn dưới của khoảng tin cậy 95%"},
-  {"name": "confidence_upper_95", "type": "FLOAT64", "mode": "NULLABLE", "description": "Giới hạn trên của khoảng tin cậy 95%"},
-  {"name": "shap_feature_1", "type": "STRING", "mode": "NULLABLE", "description": "Yếu tố ảnh hưởng mạnh nhất 1"},
-  {"name": "shap_feature_2", "type": "STRING", "mode": "NULLABLE", "description": "Yếu tố ảnh hưởng mạnh nhất 2"},
-  {"name": "shap_feature_3", "type": "STRING", "mode": "NULLABLE", "description": "Yếu tố ảnh hưởng mạnh nhất 3"},
-  {"name": "model_version", "type": "STRING", "mode": "NULLABLE", "description": "Phiên bản của model Vertex AI"},
-  {"name": "alert_flag", "type": "BOOLEAN", "mode": "NULLABLE", "description": "Cờ cảnh báo sớm nếu dự báo quá tải (>90%)"}
-]
-EOF
+  labels = merge(var.common_labels, {
+    layer               = "mlops"
+    data_classification = "internal"
+  })
 }
+
+# ========================================================================
+# 5. FEATURE STORE DATASET (PROCESSING / AI INPUT LAYER)
+# ========================================================================
+resource "google_bigquery_dataset" "hospital_feature_store" {
+  dataset_id                  = "hospital_feature_store_${var.env}"
+  friendly_name               = "Hospital Feature Store (${var.env})"
+  description                 = "Nguồn cấp dữ liệu Input đã chuẩn hóa cho Vertex AI Training và Inference."
+  project                     = var.project_id
+  location                    = var.region
+  delete_contents_on_destroy  = var.env == "prod" ? false : var.force_destroy
+
+  labels = merge(var.common_labels, {
+    layer               = "feature-store"
+    data_classification = "confidential"
+  })
+}
+
+
+
 
 # Khởi tạo Assertion Dataset với cơ chế Auto-Delete
 resource "google_bigquery_dataset" "assertions" {

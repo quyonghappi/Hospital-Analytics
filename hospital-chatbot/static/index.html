@@ -1,0 +1,921 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Hospital Analytics Assistant</title>
+    <style>
+      /* ── Reset & Base ─────────────────────────────────────────────── */
+      *,
+      *::before,
+      *::after {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+      html,
+      body {
+        height: 100%;
+        font-family: "Inter", system-ui, sans-serif;
+        background: #0f1117;
+        color: #e2e8f0;
+      }
+
+      /* ── Layout ───────────────────────────────────────────────────── */
+      body {
+        display: flex;
+        flex-direction: column;
+        height: 100vh;
+      }
+      .header {
+        flex-shrink: 0;
+      }
+      .dashboard-bar {
+        flex-shrink: 0;
+      }
+      .chat-window {
+        flex: 1;
+        overflow-y: auto;
+        padding: 20px 0;
+      }
+      .input-bar {
+        flex-shrink: 0;
+      }
+
+      /* ── Header ───────────────────────────────────────────────────── */
+      .header {
+        background: #1a1d27;
+        border-bottom: 1px solid #2d3148;
+        padding: 14px 24px;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+      }
+      /* Khu vực có thể click để New Chat */
+      .header-brand {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        cursor: pointer;
+        transition: opacity 0.2s;
+      }
+      .header-brand:hover {
+        opacity: 0.8;
+      }
+      .header-icon {
+        width: 32px;
+        height: 32px;
+        background: linear-gradient(135deg, #3b82f6, #6366f1);
+        border-radius: 8px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 16px;
+      }
+      .header h1 {
+        font-size: 16px;
+        font-weight: 600;
+        color: #f1f5f9;
+      }
+      .header-subtitle {
+        font-size: 12px;
+        color: #64748b;
+        margin-top: 1px;
+      }
+      /* Nhóm các action bên phải Header */
+      .header-actions {
+        margin-left: auto;
+        display: flex;
+        align-items: center;
+        gap: 16px;
+      }
+      /* Nút New Chat */
+      .new-chat-btn {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        padding: 6px 12px;
+        background: #1e293b;
+        border: 1px solid #334155;
+        color: #e2e8f0;
+        border-radius: 6px;
+        font-size: 12px;
+        font-weight: 500;
+        cursor: pointer;
+        transition: all 0.15s;
+        font-family: inherit;
+      }
+      .new-chat-btn:hover {
+        background: #3b82f6;
+        border-color: #3b82f6;
+        color: white;
+      }
+      .header-status {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 12px;
+        color: #64748b;
+      }
+      .status-dot {
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        background: #22c55e;
+        box-shadow: 0 0 6px #22c55e88;
+      }
+      .status-dot.offline {
+        background: #ef4444;
+        box-shadow: 0 0 6px #ef444488;
+      }
+
+      /* ── Dashboard Links Bar ──────────────────────────────────────── */
+      .dashboard-bar {
+        background: #161924;
+        border-bottom: 1px solid #2d3148;
+        padding: 8px 24px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        overflow-x: auto;
+      }
+      .dashboard-bar-label {
+        font-size: 11px;
+        color: #475569;
+        margin-right: 4px;
+        white-space: nowrap;
+      }
+      .dashboard-link {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        padding: 5px 12px;
+        border-radius: 20px;
+        border: 1px solid #2d3148;
+        background: #1a1d27;
+        color: #94a3b8;
+        font-size: 12px;
+        text-decoration: none;
+        white-space: nowrap;
+        transition: all 0.15s;
+      }
+      .dashboard-link:hover {
+        border-color: #3b82f6;
+        color: #93c5fd;
+        background: #1e2638;
+      }
+      .dashboard-link svg {
+        opacity: 0.7;
+      }
+
+      /* ── Chat Window ─────────────────────────────────────────────── */
+      .chat-window {
+        max-width: 860px;
+        width: 100%;
+        margin: 0 auto;
+        padding: 24px 20px;
+      }
+
+      /* Empty state */
+      .empty-state {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        height: 100%;
+        gap: 16px;
+        color: #475569;
+        text-align: center;
+        padding: 40px 20px;
+      }
+      .empty-state-icon {
+        font-size: 40px;
+        opacity: 0.5;
+      }
+      .empty-state h2 {
+        font-size: 18px;
+        color: #64748b;
+        font-weight: 500;
+      }
+      .empty-state p {
+        font-size: 13px;
+        max-width: 420px;
+        line-height: 1.6;
+      }
+      .sample-queries {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        justify-content: center;
+        margin-top: 8px;
+      }
+      .sample-query {
+        padding: 6px 14px;
+        border: 1px solid #2d3148;
+        border-radius: 20px;
+        font-size: 12px;
+        color: #64748b;
+        cursor: pointer;
+        background: #1a1d27;
+        transition: all 0.15s;
+      }
+      .sample-query:hover {
+        border-color: #3b82f6;
+        color: #93c5fd;
+      }
+
+      /* Messages */
+      .message {
+        display: flex;
+        gap: 12px;
+        margin-bottom: 20px;
+      }
+      .message.user {
+        flex-direction: row-reverse;
+      }
+      .avatar {
+        width: 32px;
+        height: 32px;
+        border-radius: 8px;
+        flex-shrink: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 14px;
+        font-weight: 600;
+      }
+      .avatar.bot {
+        background: linear-gradient(135deg, #3b82f6, #6366f1);
+        color: white;
+      }
+      .avatar.user {
+        background: #1e293b;
+        color: #94a3b8;
+        border: 1px solid #2d3148;
+      }
+      .bubble {
+        max-width: 72%;
+        padding: 12px 16px;
+        border-radius: 12px;
+        font-size: 14px;
+        line-height: 1.6;
+      }
+      .message.bot .bubble {
+        background: #1a1d27;
+        border: 1px solid #2d3148;
+        color: #e2e8f0;
+        border-radius: 4px 12px 12px 12px;
+      }
+      .message.user .bubble {
+        background: #1e3a5f;
+        border: 1px solid #2563eb44;
+        color: #dbeafe;
+        border-radius: 12px 4px 12px 12px;
+      }
+
+      /* Status badge */
+      .status-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        padding: 2px 8px;
+        border-radius: 12px;
+        font-size: 11px;
+        font-weight: 500;
+        margin-bottom: 8px;
+      }
+      .badge-success {
+        background: #14532d44;
+        color: #86efac;
+        border: 1px solid #16a34a44;
+      }
+      .badge-no_data {
+        background: #78350f44;
+        color: #fcd34d;
+        border: 1px solid #d9770644;
+      }
+      .badge-cannot_answer {
+        background: #1e293b;
+        color: #94a3b8;
+        border: 1px solid #2d3148;
+      }
+      .badge-sql_blocked {
+        background: #7f1d1d44;
+        color: #fca5a5;
+        border: 1px solid #dc262644;
+      }
+      .badge-timeout {
+        background: #78350f44;
+        color: #fcd34d;
+        border: 1px solid #d9770644;
+      }
+      .badge-rate_limited {
+        background: #4a1d9644;
+        color: #c4b5fd;
+        border: 1px solid #7c3aed44;
+      }
+      .badge-error {
+        background: #7f1d1d44;
+        color: #fca5a5;
+        border: 1px solid #dc262644;
+      }
+
+      /* Row count */
+      .row-count {
+        font-size: 12px;
+        color: #64748b;
+        margin-bottom: 6px;
+      }
+
+      /* SQL collapsible */
+      .sql-block {
+        margin-top: 10px;
+      }
+      .sql-toggle {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        font-size: 12px;
+        color: #64748b;
+        cursor: pointer;
+        user-select: none;
+        padding: 3px 0;
+        border: none;
+        background: none;
+        color: #64748b;
+      }
+      .sql-toggle:hover {
+        color: #94a3b8;
+      }
+      .sql-toggle .arrow {
+        transition: transform 0.2s;
+        display: inline-block;
+      }
+      .sql-toggle.open .arrow {
+        transform: rotate(90deg);
+      }
+      .sql-code {
+        display: none;
+        margin-top: 8px;
+        background: #0f1117;
+        border: 1px solid #2d3148;
+        border-radius: 6px;
+        padding: 12px 14px;
+        font-family: "JetBrains Mono", "Fira Code", "Courier New", monospace;
+        font-size: 12px;
+        color: #7dd3fc;
+        white-space: pre-wrap;
+        word-break: break-all;
+        overflow-x: auto;
+      }
+      .sql-code.visible {
+        display: block;
+      }
+
+      /* Timestamp */
+      .ts {
+        font-size: 11px;
+        color: #334155;
+        margin-top: 5px;
+      }
+
+      /* Loading indicator */
+      .loading-bubble {
+        display: flex;
+        gap: 5px;
+        align-items: center;
+        padding: 14px 16px;
+      }
+      .dot {
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        background: #3b82f6;
+        opacity: 0.4;
+        animation: pulse 1.2s infinite;
+      }
+      .dot:nth-child(2) {
+        animation-delay: 0.2s;
+      }
+      .dot:nth-child(3) {
+        animation-delay: 0.4s;
+      }
+      @keyframes pulse {
+        0%,
+        80%,
+        100% {
+          opacity: 0.2;
+          transform: scale(0.8);
+        }
+        40% {
+          opacity: 1;
+          transform: scale(1);
+        }
+      }
+
+      /* ── Input Bar ───────────────────────────────────────────────── */
+      .input-bar {
+        background: #1a1d27;
+        border-top: 1px solid #2d3148;
+        padding: 16px 24px;
+      }
+      .input-inner {
+        max-width: 860px;
+        margin: 0 auto;
+        display: flex;
+        gap: 10px;
+        align-items: flex-end;
+      }
+      .input-wrap {
+        flex: 1;
+        position: relative;
+      }
+      #query-input {
+        width: 100%;
+        background: #0f1117;
+        border: 1px solid #2d3148;
+        border-radius: 10px;
+        color: #e2e8f0;
+        font-size: 14px;
+        padding: 12px 16px;
+        resize: none;
+        min-height: 44px;
+        max-height: 120px;
+        line-height: 1.5;
+        outline: none;
+        transition: border-color 0.15s;
+        font-family: inherit;
+      }
+      #query-input:focus {
+        border-color: #3b82f6;
+      }
+      #query-input::placeholder {
+        color: #475569;
+      }
+      .char-count {
+        position: absolute;
+        right: 10px;
+        bottom: 8px;
+        font-size: 10px;
+        color: #334155;
+      }
+      .send-btn {
+        width: 44px;
+        height: 44px;
+        border-radius: 10px;
+        background: #3b82f6;
+        border: none;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        transition: all 0.15s;
+        flex-shrink: 0;
+      }
+      .send-btn:hover:not(:disabled) {
+        background: #2563eb;
+        transform: translateY(-1px);
+      }
+      .send-btn:disabled {
+        background: #1e3a5f;
+        cursor: not-allowed;
+        opacity: 0.6;
+      }
+      .send-btn svg {
+        color: white;
+      }
+      .input-hint {
+        font-size: 11px;
+        color: #334155;
+        text-align: center;
+        margin-top: 8px;
+      }
+    </style>
+  </head>
+  <body>
+    <header class="header">
+      <div
+        class="header-brand"
+        onclick="startNewChat()"
+        title="Start a new chat"
+      >
+        <div class="header-icon">🏥</div>
+        <div>
+          <h1>Hospital Analytics Assistant</h1>
+          <div class="header-subtitle">
+            Natural language queries on hospital capacity data
+          </div>
+        </div>
+      </div>
+
+      <div class="header-actions">
+        <button
+          class="new-chat-btn"
+          onclick="startNewChat()"
+          title="Clear chat history"
+        >
+          <svg
+            width="14"
+            height="14"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          >
+            <line x1="12" y1="5" x2="12" y2="19"></line>
+            <line x1="5" y1="12" x2="19" y2="12"></line>
+          </svg>
+          New Chat
+        </button>
+
+        <div class="header-status" id="header-status">
+          <div class="status-dot" id="status-dot"></div>
+          <span id="status-text">Connecting…</span>
+        </div>
+      </div>
+    </header>
+
+    <div class="dashboard-bar">
+      <span class="dashboard-bar-label">Dashboards →</span>
+
+      <a
+        href="https://datastudio.google.com/s/o4on6cvlzk0"
+        target="_blank"
+        class="dashboard-link"
+      >
+        <svg
+          width="12"
+          height="12"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+        >
+          <rect x="3" y="3" width="18" height="18" rx="2" />
+          <path d="M8 17V13M12 17V7M16 17V11" />
+        </svg>
+        Occupancy Overview
+      </a>
+      <a
+        href="https://datastudio.google.com/s/rno9nt8N5kQ"
+        target="_blank"
+        class="dashboard-link"
+      >
+        <svg
+          width="12"
+          height="12"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+        >
+          <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
+        </svg>
+        Alerts & Forecast
+      </a>
+      <a
+        href="https://datastudio.google.com/s/jhQ2su4y0iE"
+        target="_blank"
+        class="dashboard-link"
+      >
+        <svg
+          width="12"
+          height="12"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+        >
+          <path
+            d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"
+          />
+          <line x1="12" y1="9" x2="12" y2="13" />
+          <line x1="12" y1="17" x2="12.01" y2="17" />
+        </svg>
+        Population Analysis
+      </a>
+    </div>
+
+    <div class="chat-window" id="chat-window">
+      <div class="empty-state" id="empty-state">
+        <div class="empty-state-icon">💬</div>
+        <h2>Ask about hospital capacity</h2>
+        <p>
+          Query occupancy rates, ICU trends, available beds, and alert status
+          across all facilities.
+        </p>
+        <div class="sample-queries">
+          <button class="sample-query" onclick="fillQuery(this)">
+            Which hospitals are above 90% occupancy?
+          </button>
+          <button class="sample-query" onclick="fillQuery(this)">
+            Show ICU trends for the past 4 weeks
+          </button>
+          <button class="sample-query" onclick="fillQuery(this)">
+            Which facilities have available beds?
+          </button>
+          <button class="sample-query" onclick="fillQuery(this)">
+            Rank hospitals by occupancy in each region
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div class="input-bar">
+      <div class="input-inner">
+        <div class="input-wrap">
+          <textarea
+            id="query-input"
+            placeholder="Ask about hospital occupancy, ICU trends, available beds…"
+            rows="1"
+            maxlength="500"
+          ></textarea>
+          <span class="char-count" id="char-count">0 / 500</span>
+        </div>
+        <button
+          class="send-btn"
+          id="send-btn"
+          onclick="sendQuery()"
+          title="Send (Enter)"
+        >
+          <svg
+            width="18"
+            height="18"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2.5"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          >
+            <line x1="22" y1="2" x2="11" y2="13" />
+            <polygon points="22 2 15 22 11 13 2 9 22 2" />
+          </svg>
+        </button>
+      </div>
+      <div class="input-hint">
+        Enter to send &nbsp;·&nbsp; Shift+Enter for new line
+      </div>
+    </div>
+
+    <script>
+      // ── Config ────────────────────────────────────────────────────────────
+      const API_BASE = ""; // Same origin as the FastAPI server
+      const MAX_LEN = 500;
+      const MIN_LEN = 3;
+
+      // ── State ─────────────────────────────────────────────────────────────
+      let conversationId = null;
+      let isLoading = false;
+
+      // ── DOM refs ──────────────────────────────────────────────────────────
+      const chatWindow = document.getElementById("chat-window");
+      const emptyState = document.getElementById("empty-state");
+      const queryInput = document.getElementById("query-input");
+      const sendBtn = document.getElementById("send-btn");
+      const charCount = document.getElementById("char-count");
+      const statusDot = document.getElementById("status-dot");
+      const statusText = document.getElementById("status-text");
+
+      // ── 3. Start New Chat Function ─────────────────────────────────────────
+      function startNewChat() {
+        // Chặn không cho reset nếu bot đang xử lý câu trả lời
+        if (isLoading) return;
+
+        // Reset session ID
+        conversationId = null;
+
+        // Xóa tất cả bubble chat (bot và user)
+        const messages = chatWindow.querySelectorAll(".message");
+        messages.forEach((msg) => msg.remove());
+
+        // Hiện lại màn hình empty-state
+        emptyState.style.display = "flex";
+
+        // Xóa sạch ô text input và đưa về trạng thái mặc định
+        queryInput.value = "";
+        queryInput.style.height = "auto";
+        charCount.textContent = `0 / ${MAX_LEN}`;
+        sendBtn.disabled = true;
+
+        // Cuộn khung chat lên trên cùng
+        chatWindow.scrollTop = 0;
+
+        // Focus lại vào input để người dùng nhập luôn
+        queryInput.focus();
+      }
+
+      // ── Startup: health check ─────────────────────────────────────────────
+      async function checkHealth() {
+        try {
+          const r = await fetch(`${API_BASE}/health`);
+          const d = await r.json();
+          if (r.ok && d.bigquery === "healthy" && d.vertex_ai === "healthy") {
+            statusDot.classList.remove("offline");
+            statusText.textContent = "Connected";
+          } else {
+            statusDot.classList.add("offline");
+            statusText.textContent = "Degraded";
+          }
+        } catch {
+          statusDot.classList.add("offline");
+          statusText.textContent = "Offline";
+        }
+      }
+      checkHealth();
+      setInterval(checkHealth, 60_000); // Re-check every 60s
+
+      // ── Auto-resize textarea ──────────────────────────────────────────────
+      queryInput.addEventListener("input", () => {
+        queryInput.style.height = "auto";
+        queryInput.style.height = Math.min(queryInput.scrollHeight, 120) + "px";
+        charCount.textContent = `${queryInput.value.length} / ${MAX_LEN}`;
+        sendBtn.disabled =
+          queryInput.value.trim().length < MIN_LEN || isLoading;
+      });
+
+      // ── Enter to send (Shift+Enter = new line) ────────────────────────────
+      queryInput.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" && !e.shiftKey) {
+          e.preventDefault();
+          if (!sendBtn.disabled) sendQuery();
+        }
+      });
+
+      // ── Sample query buttons ──────────────────────────────────────────────
+      function fillQuery(btn) {
+        queryInput.value = btn.textContent.trim();
+        queryInput.dispatchEvent(new Event("input"));
+        queryInput.focus();
+      }
+
+      // ── Format timestamp ──────────────────────────────────────────────────
+      function formatTime(date) {
+        return date.toLocaleTimeString("en-US", {
+          hour: "2-digit",
+          minute: "2-digit",
+          hour12: false,
+        });
+      }
+
+      // ── Append a message bubble ───────────────────────────────────────────
+      function appendMessage(role, content) {
+        emptyState.style.display = "none";
+
+        const msg = document.createElement("div");
+        msg.className = `message ${role}`;
+        msg.innerHTML = `
+      <div class="avatar ${role}">${role === "bot" ? "🏥" : "U"}</div>
+      <div>
+        <div class="bubble" id="bubble-${Date.now()}">${content}</div>
+        <div class="ts">${formatTime(new Date())}</div>
+      </div>
+    `;
+        chatWindow.appendChild(msg);
+        chatWindow.scrollTop = chatWindow.scrollHeight;
+        return msg;
+      }
+
+      // ── Append loading indicator ──────────────────────────────────────────
+      function appendLoading() {
+        const msg = document.createElement("div");
+        msg.className = "message bot";
+        msg.id = "loading-msg";
+        msg.innerHTML = `
+      <div class="avatar bot">🏥</div>
+      <div class="bubble" style="background:#1a1d27;border:1px solid #2d3148;border-radius:4px 12px 12px 12px">
+        <div class="loading-bubble">
+          <div class="dot"></div><div class="dot"></div><div class="dot"></div>
+        </div>
+      </div>
+    `;
+        chatWindow.appendChild(msg);
+        chatWindow.scrollTop = chatWindow.scrollHeight;
+      }
+
+      function removeLoading() {
+        const el = document.getElementById("loading-msg");
+        if (el) el.remove();
+      }
+
+      // ── Build bot response HTML ───────────────────────────────────────────
+      function buildBotHtml(data) {
+        const badgeClass = `badge-${data.status}`;
+        const badgeLabel =
+          {
+            success: "✓ Success",
+            no_data: "○ No data",
+            cannot_answer: "— Out of scope",
+            sql_blocked: "⚠ Blocked",
+            timeout: "⏱ Timeout",
+            rate_limited: "⏳ Rate limited",
+            error: "✕ Error",
+          }[data.status] || data.status;
+
+        let html = `<span class="status-badge ${badgeClass}">${badgeLabel}</span>`;
+
+        if (data.row_count > 0) {
+          html += `<div class="row-count">${data.row_count} row${data.row_count !== 1 ? "s" : ""} returned</div>`;
+        }
+
+        html += `<div>${escapeHtml(data.response).replace(/\n/g, "<br>")}</div>`;
+
+        if (data.sql) {
+          const uid = "sql-" + Math.random().toString(36).slice(2, 9);
+          html += `
+        <div class="sql-block">
+          <button class="sql-toggle" onclick="toggleSql('${uid}', this)" title="Show/hide generated SQL">
+            <span class="arrow">▶</span> View SQL
+          </button>
+          <pre class="sql-code" id="${uid}">${escapeHtml(data.sql)}</pre>
+        </div>
+      `;
+        }
+
+        return html;
+      }
+
+      function toggleSql(uid, btn) {
+        const pre = document.getElementById(uid);
+        pre.classList.toggle("visible");
+        btn.classList.toggle("open");
+        btn.querySelector(".arrow").textContent = pre.classList.contains(
+          "visible",
+        )
+          ? "▼"
+          : "▶";
+      }
+
+      function escapeHtml(str) {
+        return str
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;")
+          .replace(/"/g, "&quot;");
+      }
+
+      // ── Main send handler ─────────────────────────────────────────────────
+      async function sendQuery() {
+        const query = queryInput.value.trim();
+        if (!query || query.length < MIN_LEN || isLoading) return;
+
+        isLoading = true;
+        sendBtn.disabled = true;
+        queryInput.disabled = true;
+
+        appendMessage("user", escapeHtml(query));
+        queryInput.value = "";
+        queryInput.style.height = "auto";
+        charCount.textContent = `0 / ${MAX_LEN}`;
+        appendLoading();
+
+        try {
+          const payload = { query };
+          if (conversationId) payload.conversation_id = conversationId;
+
+          const resp = await fetch(`${API_BASE}/chat`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+          });
+
+          removeLoading();
+
+          if (!resp.ok) {
+            const errHtml =
+              {
+                503: "⚠️ The analytics engine is temporarily unavailable. Please try again in a moment.",
+                500: "⚠️ An unexpected error occurred. Please try again.",
+              }[resp.status] ||
+              `⚠️ Request failed (HTTP ${resp.status}). Please try again.`;
+            appendMessage(
+              "bot",
+              `<span class="status-badge badge-error">✕ Error</span><div>${errHtml}</div>`,
+            );
+            return;
+          }
+
+          const data = await resp.json();
+          conversationId = data.conversation_id; // Persist for session context
+          appendMessage("bot", buildBotHtml(data));
+        } catch (err) {
+          removeLoading();
+          appendMessage(
+            "bot",
+            `
+        <span class="status-badge badge-error">✕ Network error</span>
+        <div>Could not reach the server. Check your connection and try again.</div>
+      `,
+          );
+        } finally {
+          isLoading = false;
+          queryInput.disabled = false;
+          queryInput.focus();
+          sendBtn.disabled = queryInput.value.trim().length < MIN_LEN;
+        }
+      }
+    </script>
+  </body>
+</html>

@@ -1,0 +1,26 @@
+# Cloud Function Gen 2 — Hospital Inference Pipeline
+# Pin minor versions for reproducible builds; patch-flexible via wildcard.
+#
+# Package size note: shap + xgboost + lightgbm + scikit-learn unpacked ~700MB.
+# Deploy via source upload (gcloud functions deploy --source=.) — Cloud Build
+# compiles on server side, bypassing the 100MB zip upload limit.
+
+functions-framework==3.*
+
+# GCP clients
+google-cloud-bigquery[pandas]==3.*  # [pandas] pulls in db-dtypes + pyarrow extras
+google-cloud-storage==2.*
+
+# Data
+pandas==2.*
+numpy==1.*
+pyarrow==15.*
+db-dtypes>=1.0.0                    # Required for BigQuery DATE/DATETIME → pandas
+
+# ML
+xgboost==2.*
+lightgbm==4.*
+scikit-learn==1.*
+
+# Explainability
+shap==0.*
